@@ -1,0 +1,50 @@
+cmake:
+  application:
+    configuration-dir: C:/ncs/v2.9.2/nrf52fun
+    source-dir: C:/ncs/v2.9.2/nrf52fun
+  board:
+    name: nrf52840dk
+    qualifiers: nrf52840
+    revision: 
+  devicetree:
+    bindings-dirs:
+     - C:/ncs/v2.9.2/nrf/dts/bindings
+     - C:/ncs/v2.9.2/zephyr/dts/bindings
+    files:
+     - C:/ncs/v2.9.2/zephyr/boards/nordic/nrf52840dk/nrf52840dk_nrf52840.dts
+     - C:/ncs/v2.9.2/nrf52fun/boards/nrf52840dk_nrf52840.overlay
+    include-dirs:
+     - C:/ncs/v2.9.2/nrf/include
+     - C:/ncs/v2.9.2/nrf/dts
+     - C:/ncs/v2.9.2/zephyr/include
+     - C:/ncs/v2.9.2/zephyr/include/zephyr
+     - C:/ncs/v2.9.2/zephyr/dts/common
+     - C:/ncs/v2.9.2/zephyr/dts/x86
+     - C:/ncs/v2.9.2/zephyr/dts/xtensa
+     - C:/ncs/v2.9.2/zephyr/dts/sparc
+     - C:/ncs/v2.9.2/zephyr/dts/riscv
+     - C:/ncs/v2.9.2/zephyr/dts/posix
+     - C:/ncs/v2.9.2/zephyr/dts/nios2
+     - C:/ncs/v2.9.2/zephyr/dts/arm64
+     - C:/ncs/v2.9.2/zephyr/dts/arm
+     - C:/ncs/v2.9.2/zephyr/dts/arc
+     - C:/ncs/v2.9.2/zephyr/dts
+    user-files:
+     - C:/ncs/v2.9.2/nrf52fun/boards/nrf52840dk_nrf52840.overlay
+  kconfig:
+    files:
+     - C:/ncs/v2.9.2/zephyr/boards/nordic/nrf52840dk/nrf52840dk_nrf52840_defconfig
+     - C:/ncs/v2.9.2/nrf52fun/prj.conf
+     - C:/ncs/v2.9.2/nrf52fun/build/nrf52fun/zephyr/.config.sysbuild
+    user-files:
+     - C:/ncs/v2.9.2/nrf52fun/prj.conf
+  toolchain:
+    name: zephyr
+    path: C:/ncs/toolchains/b620d30767/opt/zephyr-sdk
+  vendor-specific:
+    nordic:
+      svdfile: C:/ncs/v2.9.2/modules/hal/nordic/nrfx/mdk/nrf52840.svd
+  zephyr:
+    version: 3.7.99
+    zephyr-base: C:/ncs/v2.9.2/zephyr
+version: 0.1.0

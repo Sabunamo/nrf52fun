@@ -1,0 +1,21 @@
+{
+    "version": 2,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 20
+    },
+    "configurePresets": [
+        {
+            "name": "build",
+            "displayName": "Build for nRF52840 DK nRF52840",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build",
+            "cacheVariables": {
+                "BOARD": "nrf52840dk/nrf52840",
+                "CONF_FILE": "prj.conf",
+                "DTC_OVERLAY_FILE": "boards/nrf52840dk_nrf52840.overlay",
+                "BOARD_ROOT": "${sourceParentDir}/peripheral_lbs;${sourceDir}/"
+            }
+        }
+    ]
+}
