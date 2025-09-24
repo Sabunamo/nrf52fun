@@ -1,7 +1,0 @@
-default: nrf52fun
-build_dir: C:/ncs/v2.9.2/nrf52fun/build
-domains:
-  - name: nrf52fun
-    build_dir: C:/ncs/v2.9.2/nrf52fun/build/nrf52fun
-flash_order:
-  - nrf52fun
