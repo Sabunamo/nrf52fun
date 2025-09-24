@@ -8,18 +8,21 @@
 #include <math.h>
 #include "font.h"
 #include "gps.h"
-#include "prayer_hmi.h"
+#include "ili9341_tft.h"
 #include "prayerTime.h"
 #include "world_cities.h"
 
-#define RESET_PIN  10   // P1.10 (RST pin)
+// External prayer time function
+extern double convert_Gregor_2_Julian_Day(float d, int m, int y);
+
+#define RESET_PIN     10   // P1.10 (RST pin)
 
 // Variables for prayer calculations
 double Lng = 0.0, Lat = 0.0, D = 0.0;
 
 void draw_character(const struct device *display_dev, char c, int x, int y, uint16_t color) {
     const uint8_t* char_pattern = font_space; // default to space
-    
+
     // Select character pattern
     switch(c) {
         case 'I': char_pattern = font_I; break;
@@ -60,7 +63,7 @@ void draw_character(const struct device *display_dev, char c, int x, int y, uint
         case '9': char_pattern = font_9; break;
         default: char_pattern = font_space; break;
     }
-    
+
     // Draw 16x8 character (16 rows, 8 columns) - font might be 16 pixels tall
     for (int row = 0; row < 16; row++) {
         uint8_t pattern = char_pattern[row];
@@ -73,7 +76,7 @@ void draw_character(const struct device *display_dev, char c, int x, int y, uint
                     .pitch = 1,
                     .buf_size = sizeof(pixel),
                 };
-                
+
                 display_write(display_dev, x + col, y + row, &pixel_desc, &pixel);
             }
         }
@@ -92,10 +95,10 @@ void decimal_to_time_string(double decimal_hours, char* time_str, size_t max_len
     // Ensure positive value and within 24 hours
     while (decimal_hours < 0) decimal_hours += 24;
     while (decimal_hours >= 24) decimal_hours -= 24;
-    
+
     int hours = (int)decimal_hours;
     int minutes = (int)((decimal_hours - hours) * 60);
-    
+
     snprintf(time_str, max_len, "%02d:%02d", hours, minutes);
 }
 
@@ -112,7 +115,7 @@ void main(void)
 
     // Configure RESET pin
     gpio_pin_configure(reset_dev, RESET_PIN, GPIO_OUTPUT_ACTIVE | GPIO_OUTPUT_INIT_HIGH);
-    
+
     // Perform reset sequence
     printk("Resetting display...\n");
     gpio_pin_set(reset_dev, RESET_PIN, 0); // Assert reset (active low)
@@ -140,14 +143,25 @@ void main(void)
     // Initialize Prayer HMI
     printk("Initializing Prayer HMI...\n");
     hmi_init();
-    
+
+    // Initialize backlight control
+    printk("Initializing backlight control...\n");
+    hmi_backlight_init();
+
+    // Test backlight immediately after initialization
+    printk("Testing backlight functionality...\n");
+    hmi_test_backlight();
+
     // Initialize GPS
     printk("Initializing GPS...\n");
     int gps_ret = gps_init();
     if (gps_ret != 0) {
         printk("GPS initialization failed: %d\n", gps_ret);
     }
-    
+
+    // Allow GPS to start receiving data
+    k_msleep(200);
+
     // Initialize with default prayer times (new order with SHURUQ)
     prayer_time_t current_prayers[PRAYER_COUNT] = {
         {"Fajr", "05:30", false},
@@ -157,52 +171,74 @@ void main(void)
         {"Maghrib", "18:20", false},
         {"Isha", "20:00", false}
     };
-    
-    hmi_set_prayer_times(current_prayers, PRAYER_ASR);
+
+    // Set initial HMI data with dynamic next prayer detection
+    // Create default prayer structure for initial calculation
+    prayer_myFloats_t default_prayers = {
+        .fajjir = 5.5,    // 05:30
+        .sunRise = 6.75,  // 06:45
+        .Dhuhur = 12.25,  // 12:15
+        .Assr = 15.75,    // 15:45
+        .Maghreb = 18.33, // 18:20
+        .Ishaa = 20.0     // 20:00
+    };
+    int next_prayer = get_next_prayer_index("--:--", &default_prayers);
+    hmi_set_prayer_times(current_prayers, next_prayer);
     hmi_set_countdown("Calculating...");
     hmi_set_city("GPS Location...");
-    hmi_set_weather("28oC");
+    hmi_set_weather("28°C");
     hmi_set_current_time("--:--");
     hmi_set_brightness(75);
-    
+
+    // Force initial HMI display setup
+    printk("Performing initial HMI display setup...\n");
+    hmi_force_full_update(display_dev);
+
+    // Allow initial display to complete
+    k_msleep(300);
+
     printk("Setup complete. Starting HMI display loop...\n");
-    
+
     bool prayer_times_calculated = false;
-    
+
+    // Backlight test variables
+    uint32_t last_backlight_test = 0;
+    const uint32_t backlight_interval = 30 * 1000; // 30 seconds in milliseconds
+
     // Keep running and update display
     while (1) {
         // Process GPS data using polling
         gps_process_data();
-        
+
         // Update HMI with GPS data if available
         extern struct gps_data current_gps;
         static bool dates_updated = false;
         static char last_date[20] = {0};  // Track date changes for daily refresh
-        
+
         if (current_gps.date_valid) {
             // Check if date changed (new day started) - trigger daily refresh
             if (strlen(last_date) > 0 && strcmp(last_date, current_gps.date_str) != 0) {
                 printk("NEW DAY DETECTED! Date changed from '%s' to '%s'\n", last_date, current_gps.date_str);
                 printk("Performing daily screen refresh and prayer time recalculation...\n");
-                
+
                 // Reset flags to trigger fresh calculations
                 dates_updated = false;
                 prayer_times_calculated = false;
-                
+
                 // Force complete screen refresh for new day
                 hmi_clear_screen(display_dev);
                 k_msleep(100);  // Brief pause for complete clear
-                
+
                 // Reset display elements for new day
                 hmi_set_city("GPS Location...");
                 hmi_set_countdown("Calculating...");
-                
+
                 printk("Daily refresh completed - ready for new day!\n");
             }
-            
+
             // Update dates if needed
             if (!dates_updated) {
-                hmi_set_dates(current_gps.date_str, 
+                hmi_set_dates(current_gps.date_str,
                              current_gps.hijri_valid ? current_gps.hijri_date_str : "--/--/----",
                              current_gps.day_valid ? current_gps.day_of_week : "---");
                 // Force full update for dates (one-time per day)
@@ -210,21 +246,21 @@ void main(void)
                 printk("Current time before date update: '%s'\n", current_gps.time_str);
                 hmi_force_full_update(display_dev);
                 dates_updated = true;
-                
+
                 // Store current date for daily change detection
                 strcpy(last_date, current_gps.date_str);
                 printk("Date update completed for: %s\n", last_date);
             }
         }
-        
+
         if (current_gps.valid) {
             // Use GPS time as base, but update every second locally
             static uint32_t last_gps_update = 0;
             static char local_time[12] = {0};
             static int last_seconds = -1;
-            
+
             uint32_t now = k_uptime_get_32();
-            
+
             // Update local time from GPS initially or every 60 seconds for sync
             if (last_gps_update == 0 || (now - last_gps_update) > 60000) {
                 // Add 2 hours timezone offset to GPS UTC time
@@ -232,25 +268,25 @@ void main(void)
                     int utc_hours = (current_gps.time_str[0] - '0') * 10 + (current_gps.time_str[1] - '0');
                     int minutes = (current_gps.time_str[3] - '0') * 10 + (current_gps.time_str[4] - '0');
                     int seconds = (current_gps.time_str[6] - '0') * 10 + (current_gps.time_str[7] - '0');
-                    
+
                     // Add 2 hours for local time (UTC+2)
                     int local_hours = utc_hours + 2;
                     if (local_hours >= 24) {
                         local_hours -= 24;  // Handle day rollover
                     }
-                    
+
                     // Format as local time
                     snprintf(local_time, sizeof(local_time), "%02d:%02d:%02d", local_hours, minutes, seconds);
                     last_seconds = seconds;
-                    
+
                     printk("GPS UTC: %s -> Local UTC+2: %s\n", current_gps.time_str, local_time);
                 } else {
                     strcpy(local_time, current_gps.time_str);
                 }
-                
+
                 last_gps_update = now;
             }
-            
+
             // Update seconds every 1000ms
             static uint32_t last_second_update = 0;
             if ((now - last_second_update) >= 1000) {
@@ -261,13 +297,13 @@ void main(void)
                         int utc_hours = (current_gps.time_str[0] - '0') * 10 + (current_gps.time_str[1] - '0');
                         int minutes = (current_gps.time_str[3] - '0') * 10 + (current_gps.time_str[4] - '0');
                         int seconds = (current_gps.time_str[6] - '0') * 10 + (current_gps.time_str[7] - '0');
-                        
+
                         // Add 2 hours for local time
                         int local_hours = utc_hours + 2;
                         if (local_hours >= 24) {
                             local_hours -= 24;
                         }
-                        
+
                         snprintf(local_time, sizeof(local_time), "%02d:%02d:%02d", local_hours, minutes, seconds);
                         last_seconds = seconds;
                     }
@@ -278,17 +314,26 @@ void main(void)
                 }
                 last_second_update = now;
             }
-            
+
             hmi_set_current_time(local_time);
-            
+
             // Calculate prayer times when GPS is available and we haven't calculated yet
             if (!prayer_times_calculated && current_gps.date_valid) {
                 printk("Calculating prayer times with GPS coordinates...\n");
-                
+
                 // Set GPS coordinates for prayer calculations
                 Lat = current_gps.latitude;
                 Lng = current_gps.longitude;
-                
+
+                // Parse GPS date (format: DD/MM/YYYY) and set current Julian Day
+                int day, month, year;
+                if (sscanf(current_gps.date_str, "%d/%d/%d", &day, &month, &year) == 3) {
+                    // Set global day variable for prayer calculations
+                    D = (double)day;
+                    // Convert to Julian Day for prayer time calculations
+                    convert_Gregor_2_Julian_Day((float)day, month, year);
+                }
+
                 // Find nearest city to GPS coordinates and update HMI
                 const city_data_t* nearest_city = find_nearest_city(current_gps.latitude, current_gps.longitude);
                 if (nearest_city) {
@@ -300,49 +345,69 @@ void main(void)
                     snprintf(coord_str, sizeof(coord_str), "%.2f,%.2f", current_gps.latitude, current_gps.longitude);
                     hmi_set_city(coord_str);
                 }
-                
+
                 // Calculate prayer times
                 prayer_myFloats_t prayers = prayerStruct();
-                
+
                 // Convert decimal hours to time strings and update display (new order with SHURUQ)
                 char time_str[6];
-                
+
                 decimal_to_time_string(prayers.fajjir, time_str, sizeof(time_str));
                 strcpy(current_prayers[0].time, time_str);   // Fajr
-                
+
                 decimal_to_time_string(prayers.sunRise, time_str, sizeof(time_str));
                 strcpy(current_prayers[1].time, time_str);   // Shuruq (Sunrise)
-                
+
                 decimal_to_time_string(prayers.Dhuhur, time_str, sizeof(time_str));
                 strcpy(current_prayers[2].time, time_str);   // Dhuhr
-                
+
                 decimal_to_time_string(prayers.Assr, time_str, sizeof(time_str));
                 strcpy(current_prayers[3].time, time_str);   // Asr
-                
+
                 decimal_to_time_string(prayers.Maghreb, time_str, sizeof(time_str));
                 strcpy(current_prayers[4].time, time_str);   // Maghrib
-                
+
                 decimal_to_time_string(prayers.Ishaa, time_str, sizeof(time_str));
                 strcpy(current_prayers[5].time, time_str);   // Isha
-                
-                // Update HMI with calculated prayer times
-                hmi_set_prayer_times(current_prayers, PRAYER_ASR);
+
+                // Update HMI with calculated prayer times using dynamic next prayer detection
+                int next_prayer = get_next_prayer_index(local_time, &prayers);
+                hmi_set_prayer_times(current_prayers, next_prayer);
                 hmi_set_countdown("");
-                
+
                 // Force full update for prayer times (one-time)
-                printk("About to force full update after prayer calculation...\n");
-                printk("Current time before full update: '%s'\n", current_gps.time_str);
                 hmi_force_full_update(display_dev);
-                
+
                 prayer_times_calculated = true;
-                printk("Prayer times calculated and updated!\n");
-                printk("Current time after full update: '%s'\n", current_gps.time_str);
             }
         }
-        
+
+        // Check if it's time for backlight test (every 30 seconds)
+        uint32_t current_time = k_uptime_get_32();
+        if (current_time - last_backlight_test >= backlight_interval) {
+            printk("Starting 10-second backlight test (every 30 seconds)...\n");
+
+            // Blink backlight for 10 seconds (5 blinks: 1 second ON, 1 second OFF)
+            for (int i = 0; i < 5; i++) {
+                printk("Backlight blink %d/5: ON\n", i + 1);
+                hmi_set_backlight(true);
+                k_msleep(1000);
+
+                printk("Backlight blink %d/5: OFF\n", i + 1);
+                hmi_set_backlight(false);
+                k_msleep(1000);
+            }
+
+            // Ensure backlight is ON after test
+            hmi_set_backlight(true);
+            printk("10-second backlight test completed - backlight ON\n");
+
+            last_backlight_test = current_time;
+        }
+
         // Update display with selective updates
         hmi_update_display(display_dev);
-        
+
         // 500ms delay for smooth time updates
         k_msleep(500);
     }

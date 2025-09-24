@@ -1,5 +1,11 @@
-// nRF52840 DK to Adafruit 1947 LCD Overlay
-&i2c0 { status = "disabled"; };
+// nRF52840 DK to Adafruit 1947 LCD Overlay with GPS
+&i2c0 {
+    status = "okay";
+    pinctrl-0 = <&i2c0_default>;
+    pinctrl-1 = <&i2c0_sleep>;
+    pinctrl-names = "default", "sleep";
+};
+
 &spi0 { status = "disabled"; };
 &i2c1 { status = "disabled"; };
 
@@ -8,11 +14,25 @@
     pinctrl-0 = <&spi1_default>;
     pinctrl-1 = <&spi1_sleep>;
     pinctrl-names = "default", "sleep";
-    cs-gpios = <&gpio1 12 GPIO_ACTIVE_LOW>; // P1.12 as CS
+    cs-gpios = <&gpio1 12 GPIO_ACTIVE_LOW>; // P1.12 as TFT CS
 };
 
 /* Add pinctrl node for spi1 */
 &pinctrl {
+    i2c0_default: i2c0_default {
+        group1 {
+            psels = <NRF_PSEL(TWIM_SCL, 0, 28)>,
+                    <NRF_PSEL(TWIM_SDA, 0, 29)>;
+        };
+    };
+
+    i2c0_sleep: i2c0_sleep {
+        group1 {
+            psels = <NRF_PSEL(TWIM_SCL, 0, 28)>,
+                    <NRF_PSEL(TWIM_SDA, 0, 29)>;
+            low-power-enable;
+        };
+    };
 
     spi1_default: spi1_default {
         group1 {
@@ -21,7 +41,7 @@
                     <NRF_PSEL(SPIM_MISO, 1, 14)>; // P1.14 MISO
          };
     };
-    
+
     spi1_sleep: spi1_sleep {
         group1 {
             psels = <NRF_PSEL(SPIM_SCK, 1, 15)>,
@@ -39,6 +59,14 @@
 
     chosen {
         zephyr,display = &ili9341;
+    };
+
+    backlight: backlight {
+        compatible = "gpio-leds";
+        backlight_gpio: backlight_gpio {
+            gpios = <&gpio0 3 GPIO_ACTIVE_LOW>;
+            label = "Display Backlight";
+        };
     };
 
     mipi_dbi {
@@ -92,11 +120,14 @@
 };
 
 /// Pin Mapping Summary (Essential connections only):
-// P1.15 - SCK      -  (D13)
-// P1.13 - MOSI     -  (D11)
-// P1.14 - MISO     -  (D12)
-// P1.12 - TFT CS   -  (D10)
-// P1.11 - DC       -  (D09)
-// P1.10 - RESET    -  (D08)
+// P1.15 - SCK      -  (D13) - Shared SPI1 CLK
+// P1.13 - MOSI     -  (D11) - Shared SPI1 MOSI
+// P1.14 - MISO     -  (D12) - Shared SPI1 MISO
+// P1.12 - TFT CS   -  (D10) - ILI9341 Display CS
+// P1.11 - DC       -  (D09) - ILI9341 Display DC
+// P1.10 - RESET    -  (D08) - ILI9341 Display Reset
+// P0.03 - BACKLIGHT - (D03) - ILI9341 Display Backlight Control
 // P1.01 - GPS TX   -  UART1 TX (connect to GPS RX)
 // P1.02 - GPS RX   -  UART1 RX (connect to GPS TX)
+// P0.28 - I2C SCL  -  I2C0 SCL (for future sensors)
+// P0.29 - I2C SDA  -  I2C0 SDA (for future sensors)

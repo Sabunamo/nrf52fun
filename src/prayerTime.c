@@ -35,16 +35,8 @@ double convert_Gregor_2_Julian_Day(float d, int m, int y) {
     }
     
     int A = (int)floor(y / 100.0);
-    printk("A: %d\n", A);
-    
     int B = 2 - A + (int)floor(A / 4.0);
-    printk("B: %d\n", B);
-    
     current_JulianDay = floor(365.25 * (y + 4716)) + floor(30.6001 * (m + 1)) + d + B - 1524.5;
-    // Convert Julian Day to integer parts for printk
-    int jd_int = (int)current_JulianDay;
-    int jd_frac = (int)((current_JulianDay - jd_int) * 1000000);
-    printk("JD: %d.%06d\n", jd_int, jd_frac);
     
     return current_JulianDay;
 }
@@ -58,20 +50,16 @@ hijri_date_t convert_Gregor_2_Hijri_Date(float D, int M, int X, double JD) {
     }
 
     int a = (int)floor(X / 100.0);
-    printk("a: %d\n", a);
 
     if(JD < 2299161) {
         Ba = (int)JD;
     } else {
         Ba = 2 - a + (int)floor(a / 4.0);
     }
-    printk("Ba: %d\n", Ba);
 
     long b = (long)floor(365.25 * X) + (long)floor(30.6001 * (M + 1)) + (long)D + 1722519 + Ba;
-    printk("b: %ld\n", b);
 
     long c = (long)floor((b - 122.1) / 365.25);
-    printk("c: %ld\n", c);
     
     if(M > 2) {
         X = c - 4716;
@@ -80,10 +68,8 @@ hijri_date_t convert_Gregor_2_Hijri_Date(float D, int M, int X, double JD) {
     }
 
     long d = (long)floor(365.25 * c);
-    printk("d: %ld\n", d);
 
     long e = (long)floor((b - d) / 30.6001);
-    printk("e: %ld\n", e);
     
     if (e < 14) {
         M = (int)(e - 1);
@@ -92,10 +78,6 @@ hijri_date_t convert_Gregor_2_Hijri_Date(float D, int M, int X, double JD) {
     }
 
     D = (float)(b - d - (long)floor(30.6001 * e));
-    // Convert to integer representation for printk
-    int d_int = (int)D;
-    int d_frac = (int)((D - d_int) * 1000);
-    printk("D: %d.%03d\n", d_int, d_frac);
 
     int reminderOfDiv = X % 4;
     if(reminderOfDiv == 0) {
@@ -105,67 +87,44 @@ hijri_date_t convert_Gregor_2_Hijri_Date(float D, int M, int X, double JD) {
     }
 
     int N = (int)floor((275 * M) / 9.0) - (int)floor((M + 9) / 12.0) * w + (int)D - 30;
-    printk("N: %d\n", N);
 
     int A = X - 623;
-    printk("A: %d\n", A);
     
     int B = (int)floor(A / 4.0);
-    printk("B: %d\n", B);
 
     int C = A % 4;
-    printk("C: %d\n", C);
     
     float C1 = 365.2501f * C;
-    // Convert to integer representation for printk
-    int c1_int = (int)(C1 * 10000);
-    printk("C1: %d.%04d\n", c1_int / 10000, c1_int % 10000);
     
     int C2 = (int)floor(C1);
-    printk("C2: %d\n", C2);
 
     float Co = C1 - C2;
-    // Convert to integer representation for printk
-    int co_int = (int)(Co * 10000);
-    printk("Co: %d.%04d\n", co_int / 10000, co_int % 10000);
     
     if(Co > 0.5f) {
         C2 += 1;
     }
 
     uint64_t D1 = 1461 * (uint64_t)B + 170 + C2;
-    printk("D1: %llu\n", D1);
     
     int Q = (int)floor((double)D1 / 10631.0);
-    printk("Q: %d\n", Q);
     
     int R = (int)(D1 % 10631);
-    printk("R: %d\n", R);
     
     int J = (int)floor(R / 354.0);
-    printk("J: %d\n", J);
 
     int K = R % 354;
-    printk("K: %d\n", K);
     
     int O = (int)floor((11 * J + 14) / 30.0);
-    printk("O: %d\n", O);
     
     int H = 30 * Q + J + 1;  // Hijri Year
-    printk("Hijri Year H: %d\n", H);
     
     int JJ = K - O + N - 1;  // Day number in hijri year
-    printk("JJ: %d\n", JJ);
 
     // Handle leap year or common year
     if(JJ > 354) {
         int CL = H % 30;
-        printk("CL: %d\n", CL);
         
         float DL = (float)((11 * CL + 3) % 30);
-        // Convert to integer representation for printk
-        int dl_int = (int)(DL * 1000);
-        printk("DL: %d.%03d\n", dl_int / 1000, dl_int % 1000);
         
         if(DL < 19) {
             JJ -= 354;
@@ -177,12 +136,10 @@ hijri_date_t convert_Gregor_2_Hijri_Date(float D, int M, int X, double JD) {
     } else if(JJ == 0) {
         JJ = 355;
         H -= 1;
-        printk("Adjusted JJ: %d\n", JJ);
     }
 
     // Convert day of year to day and month
     int S = (int)floor((JJ - 1) / 29.5);
-    printk("S: %d\n", S);
     
     int month_Hijri = 1 + S;
     int day_Hijri = (int)floor(JJ - (29.5 * S));
@@ -434,7 +391,6 @@ double degreeCorrected(long x) {
 }
 
 double Degree_2_Radian(long double Degrees) {
-    printk("M_PI: %f\n", M_PI);
     double rad = (double)Degrees * (M_PI / 180.0);
     return rad;
 }
@@ -449,13 +405,10 @@ double twilligt(double winkel) {
                               (cos(D) * cos(Degree_2_Radian(Lat)))) / Degree_2_Radian(15);
     
     if (isnan(twilligt_val)) {
-        printk("twilligt is NaN, using 45 degree fallback\n");
         double twilligt_45 = acos((-sin(Degree_2_Radian(winkel)) - (sin(D) * sin(Degree_2_Radian(45)))) / 
                                  (cos(D) * cos(Degree_2_Radian(45)))) / Degree_2_Radian(15);
-        printk("twilligt_45: %f\n", twilligt_45);
         return twilligt_45;
     } else {
-        printk("twilligt: %f\n", twilligt_val);
         return twilligt_val;
     }
 }
@@ -464,7 +417,6 @@ double calc_asrAngle(int factor) {
     long double acot = (M_PI / 2.0) - atan((double)factor + tan(Degree_2_Radian(Lat) - D));
     double angle = acos(sin(acot - sin(Degree_2_Radian(Lat)) * sin(D)) / 
                        (cos(Degree_2_Radian(Lat)) * cos(D))) / Degree_2_Radian(15);
-    printk("asrAngle: %f\n", angle);
     return angle;
 }
 
@@ -587,28 +539,22 @@ prayer_myFloats_t prayerStruct(void) {
     
     double Sunrise = Dhuhr - twilligt(0.833 - (-1)*alt_correction);
     int sunrise_int = (int)(Sunrise * 1000);
-    printk("Sunrise: %d.%03d\n", sunrise_int / 1000, abs(sunrise_int % 1000));
     
     double Sunset = Dhuhr + twilligt(0.833 + (-1)*alt_correction);
     int sunset_int = (int)(Sunset * 1000);
-    printk("Sunset: %d.%03d\n", sunset_int / 1000, abs(sunset_int % 1000));
     
     double Asr = Dhuhr + calc_asrAngle(asr_Angle_factor);
     int asr_int = (int)(Asr * 1000);
-    printk("Asr: %d.%03d\n", asr_int / 1000, abs(asr_int % 1000));
     
     // Maghrib = Sunset
     double Magrib = Sunset;
     int magrib_int = (int)(Magrib * 1000);
-    printk("Magrib: %d.%03d\n", magrib_int / 1000, abs(magrib_int % 1000));
     
     double Ishaa = Dhuhr + twilligt(isha_Angle);
     int ishaa_int = (int)(Ishaa * 1000);
-    printk("Ishaa: %d.%03d\n", ishaa_int / 1000, abs(ishaa_int % 1000));
     
     double Fajr = Dhuhr - twilligt(fajr_Angle);
     int fajr_int = (int)(Fajr * 1000);
-    printk("Fajr: %d.%03d\n", fajr_int / 1000, abs(fajr_int % 1000));
     
     // Fill the struct
     localStruct.Dhuhur = Dhuhr;
@@ -620,4 +566,46 @@ prayer_myFloats_t prayerStruct(void) {
     localStruct.fajjir = Fajr;
     
     return localStruct;
+}
+
+// Function to determine next prayer based on current time
+// Returns prayer index (0=Fajr, 1=Shuruq, 2=Dhuhr, 3=Asr, 4=Maghrib, 5=Isha)
+int get_next_prayer_index(const char* current_time, const prayer_myFloats_t* prayers)
+{
+    if (!current_time || !prayers) {
+        return 3; // Default to Asr if invalid input
+    }
+
+    // Parse current time (format: "HH:MM:SS" or "HH:MM")
+    int current_hour = 0, current_min = 0;
+    if (sscanf(current_time, "%d:%d", &current_hour, &current_min) < 2) {
+        return 3; // Default to Asr if parsing fails
+    }
+
+    // Convert current time to decimal hours
+    double current_time_decimal = current_hour + (current_min / 60.0);
+
+    // Prayer times in order: Fajr, Sunrise, Dhuhr, Asr, Maghrib, Isha
+    double prayer_times[6] = {
+        prayers->fajjir,    // 0: Fajr
+        prayers->sunRise,   // 1: Shuruq (Sunrise)
+        prayers->Dhuhur,    // 2: Dhuhr
+        prayers->Assr,      // 3: Asr
+        prayers->Maghreb,   // 4: Maghrib
+        prayers->Ishaa      // 5: Isha
+    };
+
+    // Find next prayer after current time
+    for (int i = 0; i < 6; i++) {
+        // Ensure prayer times are within 24 hours
+        while (prayer_times[i] < 0) prayer_times[i] += 24;
+        while (prayer_times[i] >= 24) prayer_times[i] -= 24;
+
+        if (current_time_decimal < prayer_times[i]) {
+            return i; // Return index of next prayer
+        }
+    }
+
+    // If current time is after all prayers, next prayer is Fajr of next day
+    return 0; // Fajr
 }

@@ -49,7 +49,7 @@
 #define PRAYER_TIME_X       (DISPLAY_WIDTH - PRAYER_MARGIN - 45)  // Right-aligned times (45px for "HH:MM")
 #define COUNTDOWN_Y         (PRAYER_START_Y + 6 * PRAYER_HEIGHT + 10)
 
-// Bottom bar positions  
+// Bottom bar positions
 #define WEATHER_X           5
 #define WEATHER_Y           (DISPLAY_HEIGHT - BOTTOM_BAR_HEIGHT + 5)
 #define CLOCK_X             (DISPLAY_WIDTH / 2 - 30)
@@ -84,24 +84,24 @@ typedef struct {
     // Location and date info
     char city[20];
     char gregorian_date[12];
-    char hijri_date[12]; 
+    char hijri_date[12];
     char day_of_week[4];
-    
+
     // Prayer times
     prayer_time_t prayers[PRAYER_COUNT];
     int next_prayer_index;
     char countdown_text[25];
-    
+
     // Bottom bar info
     char weather_temp[8];
     char current_time[12];  // "HH:MM:SS" format + extra space
     uint8_t brightness_level;
-    
+
     // Status flags
     bool gps_valid;
     bool prayer_times_valid;
     bool weather_valid;
-    
+
     // Update flags to prevent unnecessary redraws
     bool needs_full_update;
     bool needs_time_update;
@@ -120,6 +120,12 @@ void hmi_set_weather(const char* temperature);
 void hmi_set_current_time(const char* time);
 void hmi_set_brightness(uint8_t level);
 
+// Backlight control functions
+void hmi_backlight_init(void);
+void hmi_set_backlight(bool on);
+void hmi_toggle_backlight(void);
+void hmi_test_backlight(void);
+
 // Display section functions
 void hmi_draw_top_bar(const struct device *display_dev);
 void hmi_draw_prayer_times(const struct device *display_dev);
@@ -127,9 +133,9 @@ void hmi_draw_bottom_bar(const struct device *display_dev);
 void hmi_clear_screen(const struct device *display_dev);
 
 // Utility functions
-void hmi_draw_text_centered(const struct device *display_dev, const char* text, 
+void hmi_draw_text_centered(const struct device *display_dev, const char* text,
                            int center_x, int y, uint16_t color);
-void hmi_draw_rectangle(const struct device *display_dev, int x, int y, 
+void hmi_draw_rectangle(const struct device *display_dev, int x, int y,
                        int width, int height, uint16_t color);
 
 #endif // PRAYER_HMI_H

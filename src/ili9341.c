@@ -1,15 +1,20 @@
 #include "prayer_hmi.h"
 #include "gps.h"
 #include "font.h"
+#include <zephyr/drivers/gpio.h>
 
 static hmi_display_data_t hmi_data = {0};
+
+// Backlight control variables
+#define BACKLIGHT_PIN  3   // P0.03 (Backlight control pin)
+static const struct device *backlight_dev = NULL;
 
 static void hmi_draw_character(const struct device *display_dev, char c, int x, int y, uint16_t color);
 static void hmi_draw_text(const struct device *display_dev, const char* text, int x, int y, uint16_t color);
 
 static void hmi_draw_character(const struct device *display_dev, char c, int x, int y, uint16_t color) {
     const uint8_t* char_pattern = font_space; // default to space
-    
+
     // Select character pattern from complete font system
     switch(c) {
         // Lowercase letters
@@ -39,7 +44,7 @@ static void hmi_draw_character(const struct device *display_dev, char c, int x, 
         case 'x': char_pattern = font_x; break;
         case 'y': char_pattern = font_y; break;
         case 'z': char_pattern = font_z; break;
-        
+
         // Uppercase letters
         case 'A': char_pattern = font_A; break;
         case 'B': char_pattern = font_B; break;
@@ -67,7 +72,7 @@ static void hmi_draw_character(const struct device *display_dev, char c, int x, 
         case 'X': char_pattern = font_X; break;
         case 'Y': char_pattern = font_Y; break;
         case 'Z': char_pattern = font_Z; break;
-        
+
         // Digits
         case '0': char_pattern = font_0; break;
         case '1': char_pattern = font_1; break;
@@ -79,7 +84,7 @@ static void hmi_draw_character(const struct device *display_dev, char c, int x, 
         case '7': char_pattern = font_7; break;
         case '8': char_pattern = font_8; break;
         case '9': char_pattern = font_9; break;
-        
+
         // Special characters
         case ' ': char_pattern = font_space; break;
         case ':': char_pattern = font_colon; break;
@@ -88,10 +93,10 @@ static void hmi_draw_character(const struct device *display_dev, char c, int x, 
         case '-': char_pattern = font_dash; break;
         case '%': char_pattern = font_percent; break;
         case '\xB0': char_pattern = font_degree; break; // Degree symbol (°)
-        
+
         default: char_pattern = font_space; break;
     }
-    
+
     // Draw 16x8 character (16 rows, 8 columns)
     for (int row = 0; row < 16; row++) {
         uint8_t pattern = char_pattern[row];
@@ -104,7 +109,7 @@ static void hmi_draw_character(const struct device *display_dev, char c, int x, 
                     .pitch = 1,
                     .buf_size = sizeof(pixel),
                 };
-                
+
                 display_write(display_dev, x + col, y + row, &pixel_desc, &pixel);
             }
         }
@@ -143,7 +148,7 @@ static void hmi_draw_text(const struct device *display_dev, const char* text, in
 void hmi_init(void)
 {
     memset(&hmi_data, 0, sizeof(hmi_display_data_t));
-    
+
     strcpy(hmi_data.city, "Unknown");
     strcpy(hmi_data.gregorian_date, "--/--/----");
     strcpy(hmi_data.hijri_date, "--/--/----");
@@ -153,18 +158,18 @@ void hmi_init(void)
     strcpy(hmi_data.current_time, "--:--");
     hmi_data.brightness_level = 50;
     hmi_data.next_prayer_index = -1;
-    
+
     // Initialize update flags
     hmi_data.needs_full_update = true;
     hmi_data.needs_time_update = false;
     hmi_data.screen_initialized = false;
-    
+
     for (int i = 0; i < PRAYER_COUNT; i++) {
         strcpy(hmi_data.prayers[i].name, "-----");
         strcpy(hmi_data.prayers[i].time, "--:--");
         hmi_data.prayers[i].is_next = false;
     }
-    
+
     strcpy(hmi_data.prayers[PRAYER_FAJR].name, "Fajr");
     strcpy(hmi_data.prayers[PRAYER_DHUHR].name, "Dhuhr");
     strcpy(hmi_data.prayers[PRAYER_ASR].name, "Asr");
@@ -178,14 +183,14 @@ void hmi_clear_screen(const struct device *display_dev)
     for (int i = 0; i < DISPLAY_WIDTH; i++) {
         black_line[i] = COLOR_BLACK;
     }
-    
+
     struct display_buffer_descriptor line_desc = {
         .width = DISPLAY_WIDTH,
         .height = 1,
         .pitch = DISPLAY_WIDTH,
         .buf_size = sizeof(black_line),
     };
-    
+
     for (int y = 0; y < DISPLAY_HEIGHT; y++) {
         display_write(display_dev, 0, y, &line_desc, black_line);
     }
@@ -194,18 +199,18 @@ void hmi_clear_screen(const struct device *display_dev)
 void hmi_draw_rectangle(const struct device *display_dev, int x, int y, int width, int height, uint16_t color)
 {
     static uint16_t line_buffer[DISPLAY_WIDTH];
-    
+
     for (int i = 0; i < width && i < DISPLAY_WIDTH; i++) {
         line_buffer[i] = color;
     }
-    
+
     struct display_buffer_descriptor line_desc = {
         .width = width,
         .height = 1,
         .pitch = width,
         .buf_size = width * sizeof(uint16_t),
     };
-    
+
     for (int row = 0; row < height; row++) {
         if (y + row >= DISPLAY_HEIGHT) break;
         display_write(display_dev, x, y + row, &line_desc, line_buffer);
@@ -223,9 +228,9 @@ void hmi_draw_text_centered(const struct device *display_dev, const char* text, 
 void hmi_draw_top_bar(const struct device *display_dev)
 {
     hmi_draw_rectangle(display_dev, 0, 0, DISPLAY_WIDTH, TOP_BAR_HEIGHT, COLOR_DARK_GRAY);
-    
+
     hmi_draw_text(display_dev, hmi_data.city, CITY_X, CITY_Y, COLOR_WHITE);
-    
+
     // Create combined day and gregorian date string: "Fri-12/09/2025"
     char day_date_str[32];
     if (hmi_data.day_of_week[0] != '-') {
@@ -234,34 +239,34 @@ void hmi_draw_top_bar(const struct device *display_dev)
         strncpy(day_date_str, hmi_data.gregorian_date, sizeof(day_date_str) - 1);
         day_date_str[sizeof(day_date_str) - 1] = '\0';
     }
-    
+
     hmi_draw_text_centered(display_dev, day_date_str, DISPLAY_WIDTH / 2, GREG_DATE_Y, COLOR_WHITE);
-    
+
     hmi_draw_text(display_dev, hmi_data.hijri_date, HIJRI_DATE_X, HIJRI_DATE_Y, COLOR_WHITE);
 }
 
 void hmi_draw_prayer_times(const struct device *display_dev)
 {
     int current_y = PRAYER_START_Y;
-    
+
     for (int i = 0; i < PRAYER_COUNT; i++) {
         uint16_t bg_color = COLOR_BLACK;
         uint16_t text_color = COLOR_WHITE;
-        
+
         if (hmi_data.prayers[i].is_next) {
             bg_color = COLOR_DARK_GRAY;
             text_color = COLOR_YELLOW;
         }
-        
+
         // Draw centered prayer background with margins
         hmi_draw_rectangle(display_dev, PRAYER_MARGIN - 10, current_y, DISPLAY_WIDTH - 2 * (PRAYER_MARGIN - 10), PRAYER_HEIGHT, bg_color);
-        
+
         hmi_draw_text(display_dev, hmi_data.prayers[i].name, PRAYER_NAME_X, current_y + 5, text_color);
         hmi_draw_text(display_dev, hmi_data.prayers[i].time, PRAYER_TIME_X, current_y + 5, text_color);
-        
+
         current_y += PRAYER_HEIGHT;
     }
-    
+
     if (hmi_data.countdown_text[0] != 'N' || hmi_data.countdown_text[5] != 'p') {
         hmi_draw_text_centered(display_dev, hmi_data.countdown_text, DISPLAY_WIDTH / 2, COUNTDOWN_Y, COLOR_GREEN);
     }
@@ -271,16 +276,16 @@ void hmi_draw_bottom_bar(const struct device *display_dev)
 {
     int bottom_y = DISPLAY_HEIGHT - BOTTOM_BAR_HEIGHT;
     hmi_draw_rectangle(display_dev, 0, bottom_y, DISPLAY_WIDTH, BOTTOM_BAR_HEIGHT, COLOR_DARK_GRAY);
-    
+
     if (hmi_data.weather_valid && hmi_data.weather_temp[0] != '-') {
         hmi_draw_text(display_dev, hmi_data.weather_temp, WEATHER_X, WEATHER_Y, COLOR_CYAN);
     }
-    
+
     // Use fixed position for consistent time display
     hmi_draw_text(display_dev, hmi_data.current_time, CLOCK_X, CLOCK_Y, COLOR_WHITE);
-    
+
     hmi_draw_text(display_dev, "SET", SETTINGS_X, SETTINGS_Y, COLOR_LIGHT_GRAY);
-    
+
     char brightness_str[8];
     snprintf(brightness_str, sizeof(brightness_str), "%d%%", hmi_data.brightness_level);
     hmi_draw_text(display_dev, brightness_str, BRIGHTNESS_X, BRIGHTNESS_Y, COLOR_ORANGE);
@@ -300,25 +305,25 @@ void hmi_update_display(const struct device *display_dev)
         hmi_data.screen_initialized = true;
         return;
     }
-    
+
     // Only update if time changed (ultra-fast selective update)
     if (strcmp(last_time_displayed, hmi_data.current_time) != 0) {
         // Debug: Print what we're about to display
         printk("HMI: Updating time from '%s' to '%s'\n", last_time_displayed, hmi_data.current_time);
-        
+
         // Clear exact time display area for consistent positioning
         hmi_draw_rectangle(display_dev, CLOCK_X - 2, CLOCK_Y - 1, TIME_DISPLAY_WIDTH + 4, TIME_DISPLAY_HEIGHT + 2, COLOR_BLACK);
-        
+
         // Small delay to ensure clear completes
         k_usleep(500);
-        
+
         // Draw new time at exact position
         hmi_draw_text(display_dev, hmi_data.current_time, CLOCK_X, CLOCK_Y, COLOR_WHITE);
-        
+
         // Update last displayed time
         strcpy(last_time_displayed, hmi_data.current_time);
     }
-    
+
     // Reset flags
     hmi_data.needs_full_update = false;
     hmi_data.needs_time_update = false;
@@ -331,17 +336,17 @@ void hmi_force_full_update(const struct device *display_dev)
     hmi_draw_top_bar(display_dev);
     hmi_draw_prayer_times(display_dev);
     hmi_draw_bottom_bar(display_dev);
-    
+
     // After full redraw, ensure time is properly displayed and tracked
     // Clear the time area specifically and redraw it cleanly
     hmi_draw_rectangle(display_dev, CLOCK_X - 2, CLOCK_Y - 1, TIME_DISPLAY_WIDTH + 4, TIME_DISPLAY_HEIGHT + 2, COLOR_BLACK);
     k_usleep(500);  // Ensure clear completes
     hmi_draw_text(display_dev, hmi_data.current_time, CLOCK_X, CLOCK_Y, COLOR_WHITE);
-    
+
     // Reset time tracking to current time
     strcpy(last_time_displayed, hmi_data.current_time);
     hmi_data.screen_initialized = true;
-    
+
     printk("HMI: Full update completed, time reset to: '%s'\n", hmi_data.current_time);
 }
 
@@ -410,4 +415,58 @@ void hmi_set_brightness(uint8_t level)
     if (level <= 100) {
         hmi_data.brightness_level = level;
     }
+}
+
+// Backlight control functions
+void hmi_backlight_init(void)
+{
+    backlight_dev = DEVICE_DT_GET(DT_NODELABEL(gpio0));
+    if (!device_is_ready(backlight_dev)) {
+        printk("Backlight GPIO device not ready\n");
+        backlight_dev = NULL;
+        return;
+    }
+
+    // Configure backlight pin as output and turn on by default
+    gpio_pin_configure(backlight_dev, BACKLIGHT_PIN, GPIO_OUTPUT_ACTIVE | GPIO_OUTPUT_INIT_HIGH);
+    gpio_pin_set(backlight_dev, BACKLIGHT_PIN, 1); // Turn on backlight
+    printk("Display backlight initialized and enabled\n");
+}
+
+void hmi_set_backlight(bool on)
+{
+    if (backlight_dev) {
+        gpio_pin_set(backlight_dev, BACKLIGHT_PIN, on ? 1 : 0);
+        printk("Display backlight %s\n", on ? "enabled" : "disabled");
+    }
+}
+
+void hmi_toggle_backlight(void)
+{
+    static bool backlight_state = true; // Default on
+    backlight_state = !backlight_state;
+    hmi_set_backlight(backlight_state);
+}
+
+void hmi_test_backlight(void)
+{
+    if (!backlight_dev) {
+        printk("Backlight test failed: device not initialized\n");
+        return;
+    }
+
+    printk("Starting backlight test - you should see the display backlight blink 3 times...\n");
+
+    // Blink the backlight 3 times
+    for (int i = 0; i < 3; i++) {
+        printk("Backlight test %d/3: OFF\n", i + 1);
+        hmi_set_backlight(false);
+        k_msleep(1000); // Off for 1 second
+
+        printk("Backlight test %d/3: ON\n", i + 1);
+        hmi_set_backlight(true);
+        k_msleep(1000); // On for 1 second
+    }
+
+    printk("Backlight test completed - backlight should be ON\n");
 }

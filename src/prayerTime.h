@@ -58,4 +58,7 @@ void prayer_time_print_hijri_date(const struct device *display_dev, int16_t x, i
 // Function to calculate all prayer times
 prayer_myFloats_t prayerStruct(void);
 
+// Function to determine next prayer based on current time
+int get_next_prayer_index(const char* current_time, const prayer_myFloats_t* prayers);
+
 #endif // PRAYER_TIME_H
