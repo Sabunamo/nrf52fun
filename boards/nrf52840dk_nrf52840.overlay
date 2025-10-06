@@ -20,7 +20,20 @@
     pinctrl-0 = <&spi1_default>;
     pinctrl-1 = <&spi1_sleep>;
     pinctrl-names = "default", "sleep";
-    cs-gpios = <&gpio1 12 GPIO_ACTIVE_LOW>; // P1.12 as TFT CS
+    cs-gpios = <&gpio1 12 GPIO_ACTIVE_LOW>, // P1.12 as TFT CS
+               <&gpio1 4 GPIO_ACTIVE_LOW>;   // P1.04 as SD Card CS
+
+    sdcard_spi_slot: sdhc@1 {
+        compatible = "zephyr,sdhc-spi-slot";
+        reg = <1>;
+        status = "okay";
+        spi-max-frequency = <25000000>;
+        mmc {
+            compatible = "zephyr,sdmmc-disk";
+            disk-name = "SD";
+            status = "okay";
+        };
+    };
 };
 
 /* Add pinctrl node for spi1 */
@@ -86,13 +99,14 @@
         ili9341: ili9341@0 {
             compatible = "ilitek,ili9341";
             reg = <0>;
-            mipi-max-frequency = <8000000>;
+            mipi-max-frequency = <25000000>;
             width = <240>;
             height = <320>;
             rotation = <90>;
             gamset = [01];
         };
     };
+
 };
 
 &uart0 {
@@ -132,8 +146,8 @@
 // P1.12 - TFT CS   -  (D10) - ILI9341 Display CS
 // P1.11 - DC       -  (D09) - ILI9341 Display DC
 // P1.10 - RESET    -  (D08) - ILI9341 Display Reset
-// P0.03 - BACKLIGHT - (D03) - ILI9341 Display Backlight Control
+// P1.04 - SD CS    -  (D04) - SD Card CS (shares SPI1)
 // P1.01 - GPS TX   -  UART1 TX (connect to GPS RX)
 // P1.02 - GPS RX   -  UART1 RX (connect to GPS TX)
-// P0.28 - I2C SCL  -  I2C0 SCL (for future sensors)
-// P0.29 - I2C SDA  -  I2C0 SDA (for future sensors)
+// P0.28 - I2C SCL  -  I2C0 SCL (BME280 sensor)
+// P0.29 - I2C SDA  -  I2C0 SDA (BME280 sensor)

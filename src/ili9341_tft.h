@@ -133,4 +133,7 @@ void hmi_draw_text_centered(const struct device *display_dev, const char* text,
 void hmi_draw_rectangle(const struct device *display_dev, int x, int y,
                        int width, int height, uint16_t color);
 
+// Image display functions
+int hmi_display_bmp_image(const struct device *display_dev, const char* filename);
+
 #endif // PRAYER_HMI_H

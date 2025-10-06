@@ -61,4 +61,7 @@ prayer_myFloats_t prayerStruct(void);
 // Function to determine next prayer based on current time
 int get_next_prayer_index(const char* current_time, const prayer_myFloats_t* prayers);
 
+// Function to blink LED1 for 1 minute at prayer time
+void Pray_Athan(void);
+
 #endif // PRAYER_TIME_H

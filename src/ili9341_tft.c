@@ -1,6 +1,7 @@
 #include "ili9341_tft.h"
 #include "gps.h"
 #include "font.h"
+#include "sdcard.h"
 #include <zephyr/drivers/gpio.h>
 
 static hmi_display_data_t hmi_data = {0};
@@ -8,6 +9,9 @@ static hmi_display_data_t hmi_data = {0};
 
 static void hmi_draw_character(const struct device *display_dev, char c, int x, int y, uint16_t color);
 static void hmi_draw_text(const struct device *display_dev, const char* text, int x, int y, uint16_t color);
+static void hmi_draw_character_scaled(const struct device *display_dev, char c, int x, int y, uint16_t color, int scale);
+static void hmi_clear_temperature_area(const struct device *display_dev, int x, int y);
+static void hmi_draw_temperature(const struct device *display_dev, const char* temp_str, int x, int y, uint16_t color);
 
 static void hmi_draw_character(const struct device *display_dev, char c, int x, int y, uint16_t color) {
     const uint8_t* char_pattern = font_space; // default to space
@@ -138,6 +142,136 @@ static void hmi_draw_text(const struct device *display_dev, const char* text, in
             }
         } else {
             hmi_draw_character(display_dev, c, x + (i * 9), y, color); // 9 pixels spacing
+        }
+    }
+}
+
+// Function to draw character with scaling (1=normal, 2=double size, etc.)
+static void hmi_draw_character_scaled(const struct device *display_dev, char c, int x, int y, uint16_t color, int scale) {
+    const uint8_t* char_pattern = font_space; // default to space
+
+    // Select character pattern for numbers and temperature symbols
+    switch(c) {
+        case '0': char_pattern = font_0; break;
+        case '1': char_pattern = font_1; break;
+        case '2': char_pattern = font_2; break;
+        case '3': char_pattern = font_3; break;
+        case '4': char_pattern = font_4; break;
+        case '5': char_pattern = font_5; break;
+        case '6': char_pattern = font_6; break;
+        case '7': char_pattern = font_7; break;
+        case '8': char_pattern = font_8; break;
+        case '9': char_pattern = font_9; break;
+        case '.': char_pattern = font_period; break;
+        case 'C': char_pattern = font_C; break;
+        case ' ': char_pattern = font_space; break;
+        default: char_pattern = font_space; break;
+    }
+
+    // Draw character with scaling
+    for (int row = 0; row < 16; row++) {
+        uint8_t pattern = char_pattern[row];
+        for (int col = 0; col < 8; col++) {
+            if (pattern & (0x80 >> col)) {
+                // Draw scaled pixel block
+                for (int sy = 0; sy < scale; sy++) {
+                    for (int sx = 0; sx < scale; sx++) {
+                        uint16_t pixel = color;
+                        struct display_buffer_descriptor pixel_desc = {
+                            .width = 1,
+                            .height = 1,
+                            .pitch = 1,
+                            .buf_size = sizeof(pixel),
+                        };
+                        display_write(display_dev, x + (col * scale) + sx, y + (row * scale) + sy, &pixel_desc, &pixel);
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Function to clear temperature area before drawing new one
+static void hmi_clear_temperature_area(const struct device *display_dev, int x, int y) {
+    // Clear area for temperature display (approximately 120x32 pixels)
+    // Large font is 16x32 (scale 2), small font is 8x16
+    uint16_t bg_color = COLOR_BLACK;
+
+    for (int row = 0; row < 32; row++) {
+        for (int col = 0; col < 120; col++) {
+            struct display_buffer_descriptor pixel_desc = {
+                .width = 1,
+                .height = 1,
+                .pitch = 1,
+                .buf_size = sizeof(bg_color),
+            };
+            display_write(display_dev, x + col, y + row, &pixel_desc, &bg_color);
+        }
+    }
+}
+
+// Custom temperature display: large integer, small decimal
+static void hmi_draw_temperature(const struct device *display_dev, const char* temp_str, int x, int y, uint16_t color) {
+    int len = strlen(temp_str);
+    int current_x = x;
+    bool after_decimal = false;
+
+    // Clear the temperature area first to prevent overlapping
+    hmi_clear_temperature_area(display_dev, x, y);
+
+    for (int i = 0; i < len; i++) {
+        char c = temp_str[i];
+
+        if (c == '.') {
+            // Draw decimal point at normal size
+            hmi_draw_character_scaled(display_dev, c, current_x, y + 8, color, 1); // offset down for alignment
+            current_x += 5; // smaller spacing for decimal point
+            after_decimal = true;
+        } else if (c >= '0' && c <= '9') {
+            if (after_decimal) {
+                // Small font for decimal part
+                hmi_draw_character_scaled(display_dev, c, current_x, y + 8, color, 1);
+                current_x += 9;
+            } else {
+                // Large font for integer part
+                hmi_draw_character_scaled(display_dev, c, current_x, y, color, 2);
+                current_x += 18; // double spacing for double size
+            }
+        } else {
+            // Draw any other character (including °C) at small size
+            // Check if this is UTF-8 degree symbol sequence (0xC2 0xB0)
+            if ((unsigned char)c == 0xC2 && i + 1 < len && (unsigned char)temp_str[i + 1] == 0xB0) {
+                // UTF-8 degree symbol (°) - draw proper degree symbol and skip next byte
+                // Draw degree symbol directly using font_degree pattern
+                for (int row = 0; row < 16; row++) {
+                    uint8_t pattern = font_degree[row];
+                    for (int col = 0; col < 8; col++) {
+                        if (pattern & (0x80 >> col)) {
+                            uint16_t pixel = color;
+                            struct display_buffer_descriptor pixel_desc = {
+                                .width = 1,
+                                .height = 1,
+                                .pitch = 1,
+                                .buf_size = sizeof(pixel),
+                            };
+                            display_write(display_dev, current_x + col, y + row, &pixel_desc, &pixel);
+                        }
+                    }
+                }
+                current_x += 9;
+                i++; // skip the second byte (0xB0) of UTF-8 sequence
+            } else if (c == 'C') {
+                // Draw C at small size
+                hmi_draw_character_scaled(display_dev, c, current_x, y + 8, color, 1);
+                current_x += 9;
+            } else if (c == '-') {
+                // Draw dash for missing temperature
+                hmi_draw_character_scaled(display_dev, c, current_x, y + 8, color, 1);
+                current_x += 9;
+            } else {
+                // Skip unknown characters (like lone 0xC2 or 0xB0)
+                // Don't draw anything for malformed UTF-8
+            }
         }
     }
 }
@@ -275,7 +409,7 @@ void hmi_draw_bottom_bar(const struct device *display_dev)
     hmi_draw_rectangle(display_dev, 0, bottom_y, DISPLAY_WIDTH, BOTTOM_BAR_HEIGHT, COLOR_DARK_GRAY);
 
     if (hmi_data.weather_valid && hmi_data.weather_temp[0] != '-') {
-        hmi_draw_text(display_dev, hmi_data.weather_temp, WEATHER_X, WEATHER_Y, COLOR_CYAN);
+        hmi_draw_temperature(display_dev, hmi_data.weather_temp, WEATHER_X, WEATHER_Y, COLOR_CYAN);
     }
 
     // Use fixed position for consistent time display
@@ -331,7 +465,7 @@ void hmi_update_display(const struct device *display_dev)
         k_usleep(500);
 
         // Draw new temperature
-        hmi_draw_text(display_dev, hmi_data.weather_temp, WEATHER_X, WEATHER_Y, COLOR_CYAN);
+        hmi_draw_temperature(display_dev, hmi_data.weather_temp, WEATHER_X, WEATHER_Y, COLOR_CYAN);
 
         // Update last displayed temperature
         strcpy(last_temp_displayed, hmi_data.weather_temp);
@@ -427,5 +561,69 @@ void hmi_set_brightness(uint8_t level)
     if (level <= 100) {
         hmi_data.brightness_level = level;
     }
+}
+
+// Function to display a BMP image from SD card
+int hmi_display_bmp_image(const struct device *display_dev, const char* filename)
+{
+    uint8_t* image_data = NULL;
+    int width, height;
+    int ret;
+
+    // Check if SD card is available
+    if (!sdcard_is_mounted()) {
+        printk("SD card not mounted, cannot display image\n");
+        return -ENODEV;
+    }
+
+    // Build full path for the image
+    char full_path[64];
+    snprintf(full_path, sizeof(full_path), "%s/%s", SD_MOUNT_POINT, filename);
+
+    printk("Loading BMP image: %s\n", full_path);
+
+    // Load the BMP image from SD card
+    ret = sdcard_load_bmp_image(full_path, &image_data, &width, &height);
+    if (ret != 0) {
+        printk("Failed to load BMP image: %d\n", ret);
+        return ret;
+    }
+
+    printk("Image loaded: %dx%d pixels\n", width, height);
+
+    // Clear the screen first
+    hmi_clear_screen(display_dev);
+
+    // Calculate centering offsets
+    int offset_x = (DISPLAY_WIDTH - width) / 2;
+    int offset_y = (DISPLAY_HEIGHT - height) / 2;
+
+    // Ensure we don't go outside display bounds
+    if (offset_x < 0) offset_x = 0;
+    if (offset_y < 0) offset_y = 0;
+    if (width > DISPLAY_WIDTH) width = DISPLAY_WIDTH;
+    if (height > DISPLAY_HEIGHT) height = DISPLAY_HEIGHT;
+
+    // Display the image using display_write
+    // BMP data is usually in BGR format, but we'll try as-is first
+    struct display_buffer_descriptor img_desc = {
+        .buf_size = width * height * 2,  // Assuming 16-bit RGB565
+        .width = width,
+        .height = height,
+        .pitch = width
+    };
+
+    // Display the image
+    ret = display_write(display_dev, offset_x, offset_y, &img_desc, image_data);
+    if (ret != 0) {
+        printk("Failed to display image: %d\n", ret);
+    } else {
+        printk("Image displayed successfully\n");
+    }
+
+    // Free the allocated memory
+    k_free(image_data);
+
+    return ret;
 }
 

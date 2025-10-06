@@ -3,6 +3,7 @@
 #include "gps.h"
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/display.h>
+#include <zephyr/drivers/gpio.h>
 #include <stdio.h>
 #include <math.h>
 
@@ -608,4 +609,36 @@ int get_next_prayer_index(const char* current_time, const prayer_myFloats_t* pra
 
     // If current time is after all prayers, next prayer is Fajr of next day
     return 0; // Fajr
+}
+
+// Function to blink LED1 for 1 minute at prayer time
+void Pray_Athan(void) {
+    #if DT_NODE_HAS_STATUS(DT_ALIAS(led1), okay)
+    const struct gpio_dt_spec led1 = GPIO_DT_SPEC_GET(DT_ALIAS(led1), gpios);
+
+    if (!device_is_ready(led1.port)) {
+        printk("LED1 device not ready\n");
+        return;
+    }
+
+    int ret = gpio_pin_configure_dt(&led1, GPIO_OUTPUT_INACTIVE);
+    if (ret < 0) {
+        printk("Failed to configure LED1: %d\n", ret);
+        return;
+    }
+
+    printk("Prayer time! Blinking LED1 for 1 minute...\n");
+
+    // Blink for 60 seconds (30 iterations of 2 seconds each)
+    for (int i = 0; i < 30; i++) {
+        gpio_pin_set_dt(&led1, 1);  // LED on
+        k_msleep(1000);              // 1 second on
+        gpio_pin_set_dt(&led1, 0);  // LED off
+        k_msleep(1000);              // 1 second off
+    }
+
+    printk("LED1 blinking completed\n");
+    #else
+    printk("LED1 not available on this board\n");
+    #endif
 }
