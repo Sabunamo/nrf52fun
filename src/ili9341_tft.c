@@ -5,9 +5,6 @@
 
 static hmi_display_data_t hmi_data = {0};
 
-// Backlight control variables
-#define BACKLIGHT_PIN  3   // P0.03 (Backlight control pin)
-static const struct device *backlight_dev = NULL;
 
 static void hmi_draw_character(const struct device *display_dev, char c, int x, int y, uint16_t color);
 static void hmi_draw_text(const struct device *display_dev, const char* text, int x, int y, uint16_t color);
@@ -292,6 +289,7 @@ void hmi_draw_bottom_bar(const struct device *display_dev)
 }
 
 static char last_time_displayed[12] = {0};
+static char last_temp_displayed[8] = {0};
 
 void hmi_update_display(const struct device *display_dev)
 {
@@ -302,14 +300,13 @@ void hmi_update_display(const struct device *display_dev)
         hmi_draw_prayer_times(display_dev);
         hmi_draw_bottom_bar(display_dev);
         strcpy(last_time_displayed, hmi_data.current_time);
+        strcpy(last_temp_displayed, hmi_data.weather_temp);
         hmi_data.screen_initialized = true;
         return;
     }
 
     // Only update if time changed (ultra-fast selective update)
     if (strcmp(last_time_displayed, hmi_data.current_time) != 0) {
-        // Debug: Print what we're about to display
-        printk("HMI: Updating time from '%s' to '%s'\n", last_time_displayed, hmi_data.current_time);
 
         // Clear exact time display area for consistent positioning
         hmi_draw_rectangle(display_dev, CLOCK_X - 2, CLOCK_Y - 1, TIME_DISPLAY_WIDTH + 4, TIME_DISPLAY_HEIGHT + 2, COLOR_BLACK);
@@ -322,6 +319,22 @@ void hmi_update_display(const struct device *display_dev)
 
         // Update last displayed time
         strcpy(last_time_displayed, hmi_data.current_time);
+    }
+
+    // Check if temperature changed and update it
+    if (hmi_data.weather_valid && strcmp(last_temp_displayed, hmi_data.weather_temp) != 0) {
+        printk("TEMP UPDATE: '%s' -> '%s'\n", last_temp_displayed, hmi_data.weather_temp);
+        // Clear temperature display area
+        hmi_draw_rectangle(display_dev, WEATHER_X - 2, WEATHER_Y - 1, 70, TIME_DISPLAY_HEIGHT + 2, COLOR_BLACK);
+
+        // Small delay to ensure clear completes
+        k_usleep(500);
+
+        // Draw new temperature
+        hmi_draw_text(display_dev, hmi_data.weather_temp, WEATHER_X, WEATHER_Y, COLOR_CYAN);
+
+        // Update last displayed temperature
+        strcpy(last_temp_displayed, hmi_data.weather_temp);
     }
 
     // Reset flags
@@ -347,7 +360,6 @@ void hmi_force_full_update(const struct device *display_dev)
     strcpy(last_time_displayed, hmi_data.current_time);
     hmi_data.screen_initialized = true;
 
-    printk("HMI: Full update completed, time reset to: '%s'\n", hmi_data.current_time);
 }
 
 void hmi_set_city(const char* city)
@@ -417,56 +429,3 @@ void hmi_set_brightness(uint8_t level)
     }
 }
 
-// Backlight control functions
-void hmi_backlight_init(void)
-{
-    backlight_dev = DEVICE_DT_GET(DT_NODELABEL(gpio0));
-    if (!device_is_ready(backlight_dev)) {
-        printk("Backlight GPIO device not ready\n");
-        backlight_dev = NULL;
-        return;
-    }
-
-    // Configure backlight pin as output and turn on by default
-    gpio_pin_configure(backlight_dev, BACKLIGHT_PIN, GPIO_OUTPUT_ACTIVE | GPIO_OUTPUT_INIT_HIGH);
-    gpio_pin_set(backlight_dev, BACKLIGHT_PIN, 1); // Turn on backlight
-    printk("Display backlight initialized and enabled\n");
-}
-
-void hmi_set_backlight(bool on)
-{
-    if (backlight_dev) {
-        gpio_pin_set(backlight_dev, BACKLIGHT_PIN, on ? 1 : 0);
-        printk("Display backlight %s\n", on ? "enabled" : "disabled");
-    }
-}
-
-void hmi_toggle_backlight(void)
-{
-    static bool backlight_state = true; // Default on
-    backlight_state = !backlight_state;
-    hmi_set_backlight(backlight_state);
-}
-
-void hmi_test_backlight(void)
-{
-    if (!backlight_dev) {
-        printk("Backlight test failed: device not initialized\n");
-        return;
-    }
-
-    printk("Starting backlight test - you should see the display backlight blink 3 times...\n");
-
-    // Blink the backlight 3 times
-    for (int i = 0; i < 3; i++) {
-        printk("Backlight test %d/3: OFF\n", i + 1);
-        hmi_set_backlight(false);
-        k_msleep(1000); // Off for 1 second
-
-        printk("Backlight test %d/3: ON\n", i + 1);
-        hmi_set_backlight(true);
-        k_msleep(1000); // On for 1 second
-    }
-
-    printk("Backlight test completed - backlight should be ON\n");
-}

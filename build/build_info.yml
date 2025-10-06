@@ -1,0 +1,4 @@
+west:
+  command: /home/sram/.local/bin/west build
+  topdir: /home/sram/ncs/v3.0.2
+  version: 1.5.0

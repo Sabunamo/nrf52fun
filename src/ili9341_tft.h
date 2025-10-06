@@ -120,11 +120,6 @@ void hmi_set_weather(const char* temperature);
 void hmi_set_current_time(const char* time);
 void hmi_set_brightness(uint8_t level);
 
-// Backlight control functions
-void hmi_backlight_init(void);
-void hmi_set_backlight(bool on);
-void hmi_toggle_backlight(void);
-void hmi_test_backlight(void);
 
 // Display section functions
 void hmi_draw_top_bar(const struct device *display_dev);

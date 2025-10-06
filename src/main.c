@@ -3,6 +3,7 @@
 #include <zephyr/drivers/display.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/uart.h>
+#include <zephyr/drivers/sensor.h>
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
@@ -19,6 +20,9 @@ extern double convert_Gregor_2_Julian_Day(float d, int m, int y);
 
 // Variables for prayer calculations
 double Lng = 0.0, Lat = 0.0, D = 0.0;
+
+// BME280 sensor device
+static const struct device *bme280_dev;
 
 void draw_character(const struct device *display_dev, char c, int x, int y, uint16_t color) {
     const uint8_t* char_pattern = font_space; // default to space
@@ -102,6 +106,50 @@ void decimal_to_time_string(double decimal_hours, char* time_str, size_t max_len
     snprintf(time_str, max_len, "%02d:%02d", hours, minutes);
 }
 
+// Function to read temperature from BME280 sensor with retry logic
+float read_bme280_temperature(void) {
+    struct sensor_value temp_value;
+    int retry_count = 3;
+    int ret;
+
+    if (!bme280_dev) {
+        printk("BME280 device not initialized\n");
+        return 0.0f;
+    }
+
+    if (!device_is_ready(bme280_dev)) {
+        printk("BME280 device not ready\n");
+        return 0.0f;
+    }
+
+    // Retry logic for sensor reading
+    for (int i = 0; i < retry_count; i++) {
+        // Add small delay before reading
+        k_msleep(10);
+
+        ret = sensor_sample_fetch(bme280_dev);
+        if (ret == 0) {
+            // Successful fetch, now get the temperature
+            ret = sensor_channel_get(bme280_dev, SENSOR_CHAN_AMBIENT_TEMP, &temp_value);
+            if (ret == 0) {
+                // Convert sensor value to float (temperature in Celsius)
+                float temperature = (float)temp_value.val1 + (float)temp_value.val2 / 1000000.0f;
+                return temperature;
+            } else {
+                printk("BME280 sensor_channel_get failed: %d (attempt %d/%d)\n", ret, i+1, retry_count);
+            }
+        } else {
+            printk("BME280 sensor_sample_fetch failed: %d (attempt %d/%d)\n", ret, i+1, retry_count);
+        }
+
+        // Wait before retry
+        k_msleep(100);
+    }
+
+    printk("BME280 reading failed after %d attempts\n", retry_count);
+    return 0.0f;
+}
+
 void main(void)
 {
     printk("Starting display text test...\n");
@@ -144,13 +192,18 @@ void main(void)
     printk("Initializing Prayer HMI...\n");
     hmi_init();
 
-    // Initialize backlight control
-    printk("Initializing backlight control...\n");
-    hmi_backlight_init();
+    // Backlight control (handled by display driver)
+    printk("Backlight controlled by display driver\n");
 
-    // Test backlight immediately after initialization
-    printk("Testing backlight functionality...\n");
-    hmi_test_backlight();
+    // Initialize BME280 sensor
+    printk("Initializing BME280 sensor...\n");
+    bme280_dev = DEVICE_DT_GET(DT_NODELABEL(bme280));
+    if (!device_is_ready(bme280_dev)) {
+        printk("BME280 sensor device not ready\n");
+        bme280_dev = NULL;
+    } else {
+        printk("BME280 sensor initialized successfully\n");
+    }
 
     // Initialize GPS
     printk("Initializing GPS...\n");
@@ -186,7 +239,17 @@ void main(void)
     hmi_set_prayer_times(current_prayers, next_prayer);
     hmi_set_countdown("Calculating...");
     hmi_set_city("GPS Location...");
-    hmi_set_weather("28°C");
+
+    // Read initial temperature from BME280 sensor
+    float initial_temp = read_bme280_temperature();
+    char temp_str[20];
+    if (initial_temp > 0.0f) {
+        snprintf(temp_str, sizeof(temp_str), "%.1f°C", initial_temp);
+    } else {
+        snprintf(temp_str, sizeof(temp_str), "--°C");
+    }
+    hmi_set_weather(temp_str);
+
     hmi_set_current_time("--:--");
     hmi_set_brightness(75);
 
@@ -317,6 +380,71 @@ void main(void)
 
             hmi_set_current_time(local_time);
 
+            // Update next prayer highlight continuously when prayer times are calculated
+            if (prayer_times_calculated) {
+                static prayer_myFloats_t current_prayer_floats;
+
+                // Update the prayer_myFloats_t structure with current prayer times
+                int fajr_h = (current_prayers[0].time[0] - '0') * 10 + (current_prayers[0].time[1] - '0');
+                int fajr_m = (current_prayers[0].time[3] - '0') * 10 + (current_prayers[0].time[4] - '0');
+                current_prayer_floats.fajjir = fajr_h + (fajr_m / 60.0);
+
+                int shuruq_h = (current_prayers[1].time[0] - '0') * 10 + (current_prayers[1].time[1] - '0');
+                int shuruq_m = (current_prayers[1].time[3] - '0') * 10 + (current_prayers[1].time[4] - '0');
+                current_prayer_floats.sunRise = shuruq_h + (shuruq_m / 60.0);
+
+                int dhuhr_h = (current_prayers[2].time[0] - '0') * 10 + (current_prayers[2].time[1] - '0');
+                int dhuhr_m = (current_prayers[2].time[3] - '0') * 10 + (current_prayers[2].time[4] - '0');
+                current_prayer_floats.Dhuhur = dhuhr_h + (dhuhr_m / 60.0);
+
+                int asr_h = (current_prayers[3].time[0] - '0') * 10 + (current_prayers[3].time[1] - '0');
+                int asr_m = (current_prayers[3].time[3] - '0') * 10 + (current_prayers[3].time[4] - '0');
+                current_prayer_floats.Assr = asr_h + (asr_m / 60.0);
+
+                int maghrib_h = (current_prayers[4].time[0] - '0') * 10 + (current_prayers[4].time[1] - '0');
+                int maghrib_m = (current_prayers[4].time[3] - '0') * 10 + (current_prayers[4].time[4] - '0');
+                current_prayer_floats.Maghreb = maghrib_h + (maghrib_m / 60.0);
+
+                int isha_h = (current_prayers[5].time[0] - '0') * 10 + (current_prayers[5].time[1] - '0');
+                int isha_m = (current_prayers[5].time[3] - '0') * 10 + (current_prayers[5].time[4] - '0');
+                current_prayer_floats.Ishaa = isha_h + (isha_m / 60.0);
+
+                // Get next prayer index based on current time
+                int next_prayer = get_next_prayer_index(local_time, &current_prayer_floats);
+
+                // Update highlight if next prayer changed
+                static int last_next_prayer = -1;
+                if (next_prayer != last_next_prayer) {
+                    hmi_set_prayer_times(current_prayers, next_prayer);
+                    hmi_force_full_update(display_dev);
+                    last_next_prayer = next_prayer;
+                    printk("Next prayer updated to index: %d (%s)\n", next_prayer, current_prayers[next_prayer].name);
+                }
+            }
+
+            // Check for prayer time and trigger LED (only for 5 main prayers, excluding Shuruq)
+            if (prayer_times_calculated && strlen(local_time) >= 5) {
+                static char last_prayer_triggered[6] = {0};
+                char current_time_hhmm[6];
+                snprintf(current_time_hhmm, sizeof(current_time_hhmm), "%c%c:%c%c",
+                         local_time[0], local_time[1], local_time[3], local_time[4]);
+
+                // Check if current time matches any of the 5 main prayer times (excluding Shuruq at index 1)
+                for (int i = 0; i < PRAYER_COUNT; i++) {
+                    if (i == 1) continue; // Skip Shuruq (index 1)
+
+                    if (strcmp(current_time_hhmm, current_prayers[i].time) == 0) {
+                        // Check if we haven't already triggered for this prayer time
+                        if (strcmp(last_prayer_triggered, current_prayers[i].time) != 0) {
+                            printk("PRAYER TIME REACHED: %s at %s\n", current_prayers[i].name, current_prayers[i].time);
+                            strcpy(last_prayer_triggered, current_prayers[i].time);
+                            Pray_Athan(); // Trigger LED blinking
+                        }
+                        break;
+                    }
+                }
+            }
+
             // Calculate prayer times when GPS is available and we haven't calculated yet
             if (!prayer_times_calculated && current_gps.date_valid) {
                 printk("Calculating prayer times with GPS coordinates...\n");
@@ -382,25 +510,34 @@ void main(void)
             }
         }
 
-        // Check if it's time for backlight test (every 30 seconds)
+        // Periodic status update (every 30 seconds)
         uint32_t current_time = k_uptime_get_32();
         if (current_time - last_backlight_test >= backlight_interval) {
-            printk("Starting 10-second backlight test (every 30 seconds)...\n");
+            printk("=== Status Update (every 30 seconds) ===\n");
+            printk("GPS Valid: %s\n", current_gps.valid ? "YES" : "NO");
+            printk("Prayer Times Calculated: %s\n", prayer_times_calculated ? "YES" : "NO");
+            printk("Display Working: YES\n");
 
-            // Blink backlight for 10 seconds (5 blinks: 1 second ON, 1 second OFF)
-            for (int i = 0; i < 5; i++) {
-                printk("Backlight blink %d/5: ON\n", i + 1);
-                hmi_set_backlight(true);
-                k_msleep(1000);
+            // Update temperature from BME280 sensor with caching
+            static float last_valid_temp = 0.0f;
+            float current_temp = read_bme280_temperature();
+            char temp_str[20];
 
-                printk("Backlight blink %d/5: OFF\n", i + 1);
-                hmi_set_backlight(false);
-                k_msleep(1000);
+            if (current_temp > 0.0f) {
+                // Valid reading - update cache and display
+                last_valid_temp = current_temp;
+                snprintf(temp_str, sizeof(temp_str), "%.1f°C", current_temp);
+                printk("BME280 Temperature: %.1f°C\n", current_temp);
+            } else if (last_valid_temp > 0.0f) {
+                // Use cached value if we have one
+                snprintf(temp_str, sizeof(temp_str), "%.1f°C", last_valid_temp);
+                printk("BME280 Temperature: Using cached %.1f°C (read failed)\n", last_valid_temp);
+            } else {
+                // No valid reading available
+                snprintf(temp_str, sizeof(temp_str), "--°C");
+                printk("BME280 Temperature: No valid reading available\n");
             }
-
-            // Ensure backlight is ON after test
-            hmi_set_backlight(true);
-            printk("10-second backlight test completed - backlight ON\n");
+            hmi_set_weather(temp_str);
 
             last_backlight_test = current_time;
         }

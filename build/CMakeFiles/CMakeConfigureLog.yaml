@@ -1,0 +1,11 @@
+
+---
+events:
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/home/sram/st/stm32cubeclt_1.18.0/CMake/share/cmake-3.28/Modules/CMakeDetermineSystem.cmake:233 (message)"
+      - "CMakeLists.txt:17 (project)"
+    message: |
+      The system is: Linux - 6.8.0-83-generic - x86_64
+...

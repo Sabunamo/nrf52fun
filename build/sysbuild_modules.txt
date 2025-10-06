@@ -1,0 +1,2 @@
+"nrf":"/home/sram/ncs/v3.0.2/nrf":"/home/sram/ncs/v3.0.2/nrf/sysbuild"
+"mcuboot":"/home/sram/ncs/v3.0.2/bootloader/mcuboot":"/home/sram/ncs/v3.0.2/bootloader/mcuboot/boot/zephyr/sysbuild"
