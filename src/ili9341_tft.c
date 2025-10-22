@@ -1,7 +1,6 @@
 #include "ili9341_tft.h"
 #include "gps.h"
 #include "font.h"
-#include "sdcard.h"
 #include <zephyr/drivers/gpio.h>
 
 static hmi_display_data_t hmi_data = {0};
@@ -561,69 +560,5 @@ void hmi_set_brightness(uint8_t level)
     if (level <= 100) {
         hmi_data.brightness_level = level;
     }
-}
-
-// Function to display a BMP image from SD card
-int hmi_display_bmp_image(const struct device *display_dev, const char* filename)
-{
-    uint8_t* image_data = NULL;
-    int width, height;
-    int ret;
-
-    // Check if SD card is available
-    if (!sdcard_is_mounted()) {
-        printk("SD card not mounted, cannot display image\n");
-        return -ENODEV;
-    }
-
-    // Build full path for the image
-    char full_path[64];
-    snprintf(full_path, sizeof(full_path), "%s/%s", SD_MOUNT_POINT, filename);
-
-    printk("Loading BMP image: %s\n", full_path);
-
-    // Load the BMP image from SD card
-    ret = sdcard_load_bmp_image(full_path, &image_data, &width, &height);
-    if (ret != 0) {
-        printk("Failed to load BMP image: %d\n", ret);
-        return ret;
-    }
-
-    printk("Image loaded: %dx%d pixels\n", width, height);
-
-    // Clear the screen first
-    hmi_clear_screen(display_dev);
-
-    // Calculate centering offsets
-    int offset_x = (DISPLAY_WIDTH - width) / 2;
-    int offset_y = (DISPLAY_HEIGHT - height) / 2;
-
-    // Ensure we don't go outside display bounds
-    if (offset_x < 0) offset_x = 0;
-    if (offset_y < 0) offset_y = 0;
-    if (width > DISPLAY_WIDTH) width = DISPLAY_WIDTH;
-    if (height > DISPLAY_HEIGHT) height = DISPLAY_HEIGHT;
-
-    // Display the image using display_write
-    // BMP data is usually in BGR format, but we'll try as-is first
-    struct display_buffer_descriptor img_desc = {
-        .buf_size = width * height * 2,  // Assuming 16-bit RGB565
-        .width = width,
-        .height = height,
-        .pitch = width
-    };
-
-    // Display the image
-    ret = display_write(display_dev, offset_x, offset_y, &img_desc, image_data);
-    if (ret != 0) {
-        printk("Failed to display image: %d\n", ret);
-    } else {
-        printk("Image displayed successfully\n");
-    }
-
-    // Free the allocated memory
-    k_free(image_data);
-
-    return ret;
 }
 
