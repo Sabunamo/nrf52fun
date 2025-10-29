@@ -1,6 +1,7 @@
 #include "gps.h"
 #include "font.h"
 #include "prayerTime.h"
+#include "world_cities.h"
 
 static const struct device *gps_uart;
 static char gps_buffer[GPS_BUFFER_SIZE];
@@ -193,9 +194,21 @@ static void process_gprmc(char *sentence)
             }
 
             if (valid_time) {
+                // Extract UTC hours, minutes, seconds
+                char hours_str[3] = {time_buffer[0], time_buffer[1], '\0'};
+                char minutes_str[3] = {time_buffer[2], time_buffer[3], '\0'};
+                char seconds_str[3] = {time_buffer[4], time_buffer[5], '\0'};
+
+                current_gps.utc_hours = atoi(hours_str);
+                current_gps.utc_minutes = atoi(minutes_str);
+                current_gps.utc_seconds = atoi(seconds_str);
+
                 // Format as HH:MM:SS
                 snprintf(current_gps.time_str, sizeof(current_gps.time_str),
                         "%.2s:%.2s:%.2s", time_buffer, time_buffer+2, time_buffer+4);
+
+                printk("[GPS] RAW GPS UTC Time: %02d:%02d:%02d\n",
+                       current_gps.utc_hours, current_gps.utc_minutes, current_gps.utc_seconds);
             }
         }
 
@@ -218,10 +231,19 @@ static void process_gpzda(char *sentence)
     // GPZDA format: $GPZDA,time,day,month,year,local_hour,local_min,checksum
     if (token_count >= 5 && tokens[1] && tokens[2] && tokens[3] && tokens[4]) {
         // Extract date from day, month, year fields
-        snprintf(current_gps.date_str, sizeof(current_gps.date_str), 
+        current_gps.utc_day = atoi(tokens[2]);
+        current_gps.utc_month = atoi(tokens[3]);
+        current_gps.utc_year = atoi(tokens[4]);
+
+        snprintf(current_gps.date_str, sizeof(current_gps.date_str),
                 "%s/%s/%s", tokens[2], tokens[3], tokens[4]);
         current_gps.date_valid = true;
-        
+
+        printk("[GPS] RAW GPS Date parsed: Day=%d, Month=%d, Year=%d\n",
+               current_gps.utc_day, current_gps.utc_month, current_gps.utc_year);
+        printk("[GPS] Date string: %s\n", current_gps.date_str);
+    } else {
+        printk("[GPS] GPZDA parsing failed: token_count=%d\n", token_count);
     }
 }
 
@@ -437,4 +459,309 @@ const char* gps_get_today_date(void)
     } else {
         return "No Date";
     }
+}
+
+// DST configuration - Germany/Berlin
+// Winter (CET - DST inactive): UTC+1
+// Summer (CEST - DST active): UTC+1 + 1 = UTC+2
+static struct dst_config dst_cfg = {
+    .timezone_offset = 1,       // UTC+1 (CET - Central European Time)
+    .dst_enabled = true,        // DST enabled
+    .dst_offset = 1,            // +1 hour when DST is active (CEST = UTC+2)
+    .dst_start_month = 3,       // March (last Sunday at 02:00)
+    .dst_start_day = 0,         // 0 = last Sunday (calculated dynamically)
+    .dst_end_month = 10,        // October (last Sunday at 03:00)
+    .dst_end_day = 0,           // 0 = last Sunday (calculated dynamically)
+};
+
+void gps_set_dst_config(const struct dst_config *config)
+{
+    if (config) {
+        dst_cfg = *config;
+        printk("DST Config: UTC%+d, DST %s (offset: %+d hours)\n",
+               dst_cfg.timezone_offset,
+               dst_cfg.dst_enabled ? "enabled" : "disabled",
+               dst_cfg.dst_offset);
+        if (dst_cfg.dst_enabled) {
+            printk("DST Period: Month %d Day %d to Month %d Day %d\n",
+                   dst_cfg.dst_start_month, dst_cfg.dst_start_day,
+                   dst_cfg.dst_end_month, dst_cfg.dst_end_day);
+        }
+    }
+}
+
+/**
+ * @brief Calculate day of week using Zeller's congruence
+ * @param day Day of month (1-31)
+ * @param month Month (1-12)
+ * @param year Year (full year, e.g., 2025)
+ * @return Day of week (0=Sunday, 1=Monday, ..., 6=Saturday)
+ */
+static int calculate_day_of_week(int day, int month, int year)
+{
+    // Zeller's congruence for Gregorian calendar
+    if (month < 3) {
+        month += 12;
+        year--;
+    }
+
+    int q = day;
+    int m = month;
+    int k = year % 100;
+    int j = year / 100;
+
+    int h = (q + ((13 * (m + 1)) / 5) + k + (k / 4) + (j / 4) - (2 * j)) % 7;
+
+    // Convert to 0=Sunday format
+    return (h + 6) % 7;
+}
+
+/**
+ * @brief Get number of days in a month
+ * @param month Month (1-12)
+ * @param year Year (for leap year calculation)
+ * @return Number of days in the month
+ */
+static int days_in_month(int month, int year)
+{
+    if (month == 2) {
+        // February - check for leap year
+        if ((year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)) {
+            return 29;
+        }
+        return 28;
+    }
+
+    // April, June, September, November have 30 days
+    if (month == 4 || month == 6 || month == 9 || month == 11) {
+        return 30;
+    }
+
+    // All other months have 31 days
+    return 31;
+}
+
+/**
+ * @brief Calculate the date of the last Sunday of a given month
+ * @param month Month (1-12)
+ * @param year Year (full year)
+ * @return Day of month for last Sunday (1-31)
+ */
+static int get_last_sunday(int month, int year)
+{
+    int last_day = days_in_month(month, year);
+
+    // Start from the last day and work backwards to find Sunday
+    for (int day = last_day; day >= last_day - 6; day--) {
+        int dow = calculate_day_of_week(day, month, year);
+        if (dow == 0) {  // Sunday
+            return day;
+        }
+    }
+
+    // Should never reach here, but return last day as fallback
+    return last_day;
+}
+
+bool gps_is_dst_active(void)
+{
+    if (!dst_cfg.dst_enabled || !current_gps.date_valid) {
+        printk("[DST] DST disabled or no valid date\n");
+        return false;
+    }
+
+    int month = current_gps.utc_month;
+    int day = current_gps.utc_day;
+    int year = current_gps.utc_year;
+
+    // If utc_* fields are not populated (0), try to parse from date_str
+    if (year == 0 && current_gps.date_valid && strlen(current_gps.date_str) >= 10) {
+        // date_str format is "DD/MM/YYYY"
+        char day_str[3], month_str[3], year_str[5];
+        sscanf(current_gps.date_str, "%2s/%2s/%4s", day_str, month_str, year_str);
+        day = atoi(day_str);
+        month = atoi(month_str);
+        year = atoi(year_str);
+        printk("[DST] Parsed date from date_str: %s -> %04d-%02d-%02d\n",
+               current_gps.date_str, year, month, day);
+    }
+
+    printk("[DST] Current date: %04d-%02d-%02d\n", year, month, day);
+
+    // Calculate actual DST transition dates if using "last Sunday" rule (day = 0)
+    int dst_start_day = dst_cfg.dst_start_day;
+    int dst_end_day = dst_cfg.dst_end_day;
+
+    if (dst_start_day == 0) {
+        // Calculate last Sunday of start month
+        dst_start_day = get_last_sunday(dst_cfg.dst_start_month, year);
+        printk("[DST] Calculated DST start: Last Sunday of month %d = day %d\n",
+               dst_cfg.dst_start_month, dst_start_day);
+    }
+
+    if (dst_end_day == 0) {
+        // Calculate last Sunday of end month
+        dst_end_day = get_last_sunday(dst_cfg.dst_end_month, year);
+        printk("[DST] Calculated DST end: Last Sunday of month %d = day %d\n",
+               dst_cfg.dst_end_month, dst_end_day);
+    }
+
+    printk("[DST] DST period: %04d-%02d-%02d to %04d-%02d-%02d\n",
+           year, dst_cfg.dst_start_month, dst_start_day,
+           year, dst_cfg.dst_end_month, dst_end_day);
+
+    bool is_dst = false;
+
+    // Check if current date is within DST period
+    if (month > dst_cfg.dst_start_month && month < dst_cfg.dst_end_month) {
+        // Definitely in DST period (between start and end months)
+        is_dst = true;
+        printk("[DST] In DST period (between months %d and %d)\n",
+               dst_cfg.dst_start_month, dst_cfg.dst_end_month);
+    } else if (month == dst_cfg.dst_start_month && day >= dst_start_day) {
+        // In start month, on or after start day
+        is_dst = true;
+        printk("[DST] In DST period (start month, day %d >= %d)\n", day, dst_start_day);
+    } else if (month == dst_cfg.dst_end_month && day < dst_end_day) {
+        // In end month, before end day
+        is_dst = true;
+        printk("[DST] In DST period (end month, day %d < %d)\n", day, dst_end_day);
+    } else {
+        printk("[DST] NOT in DST period\n");
+    }
+
+    return is_dst;
+}
+
+int gps_get_current_offset(void)
+{
+    int offset = dst_cfg.timezone_offset;
+    bool dst_active = gps_is_dst_active();
+
+    printk("[TIME] ===== TIMEZONE OFFSET CALCULATION =====\n");
+    printk("[TIME] Base timezone offset: UTC%+d\n", offset);
+
+    if (dst_active) {
+        printk("[TIME] >> DST IS ACTIVE <<\n");
+        printk("[TIME] Adding DST offset: %+d hour(s)\n", dst_cfg.dst_offset);
+        offset += dst_cfg.dst_offset;
+        printk("[TIME] New offset after DST: UTC%+d\n", offset);
+    } else {
+        printk("[TIME] >> DST IS NOT ACTIVE <<\n");
+        printk("[TIME] No DST offset added\n");
+    }
+
+    printk("[TIME] Final total offset: UTC%+d\n", offset);
+    printk("[TIME] ==========================================\n");
+    return offset;
+}
+
+int gps_calculate_timezone_from_longitude(double longitude)
+{
+    // Calculate timezone from longitude
+    // Earth rotates 360° in 24 hours, so each timezone is ~15° wide
+    // Timezone offset = longitude / 15, rounded to nearest hour
+
+    // Use round() to properly round to nearest integer instead of truncating
+    double tz_calc = longitude / 15.0;
+    int timezone = (int)round(tz_calc);
+
+    // Clamp to valid timezone range [-12, +14]
+    if (timezone < -12) timezone = -12;
+    if (timezone > 14) timezone = 14;
+
+    printk("[TIMEZONE] Longitude: %.6f, Calculated: %.6f / 15 = %.6f, Rounded: UTC%+d\n",
+           longitude, longitude, tz_calc, timezone);
+
+    return timezone;
+}
+
+void gps_auto_configure_timezone(void)
+{
+    if (!current_gps.valid) {
+        printk("[TIMEZONE] Cannot auto-configure: GPS not valid\n");
+        return;
+    }
+
+    // Calculate timezone from longitude (mathematical approach)
+    int calculated_tz = gps_calculate_timezone_from_longitude(current_gps.longitude);
+
+    // Find nearest city to get the political timezone
+    const city_data_t* nearest_city = find_nearest_city(current_gps.latitude, current_gps.longitude);
+
+    int final_tz = calculated_tz;  // Default to calculated
+
+    if (nearest_city) {
+        int city_tz = nearest_city->timezone_offset;
+
+        printk("[TIMEZONE] Nearest city: %s (%s) has timezone UTC%+d\n",
+               nearest_city->city_name, nearest_city->country, city_tz);
+        printk("[TIMEZONE] Calculated timezone from longitude: UTC%+d\n", calculated_tz);
+
+        // Compare calculated vs city timezone
+        if (calculated_tz == city_tz) {
+            printk("[TIMEZONE] ✓ Calculated and city timezones MATCH - using UTC%+d\n", calculated_tz);
+            final_tz = calculated_tz;
+        } else {
+            printk("[TIMEZONE] ✗ Calculated (UTC%+d) and city (UTC%+d) timezones DIFFER\n",
+                   calculated_tz, city_tz);
+            printk("[TIMEZONE] → Using city timezone UTC%+d (political boundary)\n", city_tz);
+            final_tz = city_tz;
+        }
+    } else {
+        printk("[TIMEZONE] No nearest city found - using calculated timezone UTC%+d\n", calculated_tz);
+    }
+
+    // Update DST configuration with final timezone
+    dst_cfg.timezone_offset = final_tz;
+
+    // Also update prayer time timezone
+    prayer_set_timezone(final_tz);
+
+    printk("[TIMEZONE] ===== FINAL TIMEZONE: UTC%+d =====\n", final_tz);
+    printk("[TIMEZONE] Location: %.4f°%c, %.4f°%c\n",
+           fabs(current_gps.latitude), current_gps.lat_hemisphere,
+           fabs(current_gps.longitude), current_gps.lon_hemisphere);
+}
+
+int gps_get_local_time(char *local_time_str, size_t max_len)
+{
+    if (!current_gps.valid || !local_time_str) {
+        if (local_time_str && max_len > 0) {
+            snprintf(local_time_str, max_len, "--:--:--");
+        }
+        printk("[TIME] GPS not valid or no buffer\n");
+        return 0;
+    }
+
+    printk("[TIME] ========== LOCAL TIME CALCULATION ==========\n");
+    printk("[TIME] GPS UTC time: %02d:%02d:%02d\n",
+           current_gps.utc_hours, current_gps.utc_minutes, current_gps.utc_seconds);
+
+    int total_offset = gps_get_current_offset();
+
+    // Apply offset to UTC time
+    int local_hours = current_gps.utc_hours + total_offset;
+    int local_minutes = current_gps.utc_minutes;
+    int local_seconds = current_gps.utc_seconds;
+
+    printk("[TIME] Before rollover: %02d:%02d:%02d (offset: %+d)\n",
+           local_hours, local_minutes, local_seconds, total_offset);
+
+    // Handle day rollover
+    if (local_hours >= 24) {
+        local_hours -= 24;
+        printk("[TIME] Day rollover: wrapped to %02d hours\n", local_hours);
+    } else if (local_hours < 0) {
+        local_hours += 24;
+        printk("[TIME] Day rollback: wrapped to %02d hours\n", local_hours);
+    }
+
+    snprintf(local_time_str, max_len, "%02d:%02d:%02d",
+             local_hours, local_minutes, local_seconds);
+
+    printk("[TIME] Final local time: %s (UTC%+d)\n", local_time_str, total_offset);
+    printk("[TIME] ============================================\n");
+
+    return total_offset;
 }

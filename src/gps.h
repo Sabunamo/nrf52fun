@@ -48,6 +48,32 @@ struct gps_data {
     bool hijri_valid;               ///< True when Hijri date is calculated
     bool day_valid;                 ///< True when day of week is available
     bool seeHeight_valid;           ///< True when altitude is valid
+    int utc_hours;                  ///< UTC hours (0-23)
+    int utc_minutes;                ///< UTC minutes (0-59)
+    int utc_seconds;                ///< UTC seconds (0-59)
+    int utc_day;                    ///< UTC day (1-31)
+    int utc_month;                  ///< UTC month (1-12)
+    int utc_year;                   ///< UTC year (full year)
+};
+
+/**
+ * @brief DST (Daylight Saving Time) configuration
+ *
+ * For EU DST rules (last Sunday of March to last Sunday of October):
+ * - dst_start_month = 3, dst_start_day = 0
+ * - dst_end_month = 10, dst_end_day = 0
+ *
+ * Setting day to 0 automatically calculates the last Sunday of the month.
+ * Setting day to 1-31 uses that specific date.
+ */
+struct dst_config {
+    int timezone_offset;            ///< Standard timezone offset from UTC in hours (e.g., 2 for UTC+2)
+    bool dst_enabled;               ///< Enable/disable DST
+    int dst_offset;                 ///< DST offset in hours (typically 1)
+    int dst_start_month;            ///< Month when DST starts (1-12)
+    int dst_start_day;              ///< Day when DST starts (1-31), or 0 for last Sunday of month
+    int dst_end_month;              ///< Month when DST ends (1-12)
+    int dst_end_day;                ///< Day when DST ends (1-31), or 0 for last Sunday of month
 };
 
 // Global GPS data instance
@@ -84,5 +110,44 @@ void display_gps_data(const struct device *display_dev, int x, int y);
  * @return Pointer to date string in DD/MM/YYYY format
  */
 const char* gps_get_today_date(void);
+
+/**
+ * @brief Set DST configuration
+ * @param config Pointer to DST configuration structure
+ */
+void gps_set_dst_config(const struct dst_config *config);
+
+/**
+ * @brief Check if DST is currently active
+ * @return true if DST is active, false otherwise
+ */
+bool gps_is_dst_active(void);
+
+/**
+ * @brief Get local time with timezone and DST applied
+ * @param local_time_str Output buffer for local time string (HH:MM:SS format)
+ * @param max_len Maximum length of output buffer
+ * @return Total offset applied (timezone + DST) in hours
+ */
+int gps_get_local_time(char *local_time_str, size_t max_len);
+
+/**
+ * @brief Get current timezone offset (including DST if active)
+ * @return Total timezone offset in hours
+ */
+int gps_get_current_offset(void);
+
+/**
+ * @brief Calculate timezone offset from GPS longitude coordinate
+ * @param longitude Longitude in decimal degrees
+ * @return Calculated timezone offset in hours from UTC
+ */
+int gps_calculate_timezone_from_longitude(double longitude);
+
+/**
+ * @brief Auto-configure timezone based on current GPS coordinates
+ * Updates the DST configuration with calculated timezone offset
+ */
+void gps_auto_configure_timezone(void);
 
 #endif

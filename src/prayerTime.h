@@ -64,4 +64,10 @@ int get_next_prayer_index(const char* current_time, const prayer_myFloats_t* pra
 // Function to blink LED1 for 1 minute at prayer time
 void Pray_Athan(void);
 
+// Function to set timezone offset for prayer calculations
+void prayer_set_timezone(int timezone_offset);
+
+// Function to get current timezone offset used for prayer calculations
+int prayer_get_timezone(void);
+
 #endif // PRAYER_TIME_H

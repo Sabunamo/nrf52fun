@@ -17,7 +17,7 @@ float isha_Angle = 17;
 // Factor of shadow length at Asr
 float asr_Angle_factor = 1;
 // Sun's declination
-int TimeZone = 2;
+int TimeZone = 1;  // Default UTC+1, will be auto-configured from GPS
 
 // Need M_PI constant for calculations
 #ifndef M_PI
@@ -525,7 +525,15 @@ prayer_myFloats_t prayerStruct(void) {
     double EqT_to_min = EqT/15;
     int eqt_min_int = (int)(EqT_to_min * 1000000);
     printk("equation of time in min: %d.%06d\n", eqt_min_int / 1000000, abs(eqt_min_int % 1000000));
-    
+
+    // Debug: Show timezone being used for prayer calculations
+    printk("\n[PRAYER CALC] ===== PRAYER TIME CALCULATION =====\n");
+    printk("[PRAYER CALC] Using TimeZone: UTC%+d\n", TimeZone);
+    printk("[PRAYER CALC] Longitude: %.6f\n", Lng);
+    printk("[PRAYER CALC] Latitude: %.6f\n", Lat);
+    printk("[PRAYER CALC] Formula: Dhuhr = 12 + TimeZone - (Lng/15) - EqT_to_min\n");
+    printk("[PRAYER CALC] Dhuhr = 12 + %d - (%.6f/15) - %.6f\n", TimeZone, Lng, EqT_to_min);
+
     // The 5 Prayers and sunrise and sunset
     double Dhuhr = 12 + TimeZone - (Lng/15) - EqT_to_min;
     int dhuhr_int = (int)(Dhuhr * 1000);
@@ -565,7 +573,17 @@ prayer_myFloats_t prayerStruct(void) {
     localStruct.sunDown = Sunset;
     localStruct.Ishaa = Ishaa;
     localStruct.fajjir = Fajr;
-    
+
+    // Debug: Show all calculated prayer times
+    printk("[PRAYER CALC] ===== CALCULATED PRAYER TIMES (decimal hours) =====\n");
+    printk("[PRAYER CALC] Fajr:    %.4f\n", Fajr);
+    printk("[PRAYER CALC] Sunrise: %.4f\n", Sunrise);
+    printk("[PRAYER CALC] Dhuhr:   %.4f\n", Dhuhr);
+    printk("[PRAYER CALC] Asr:     %.4f\n", Asr);
+    printk("[PRAYER CALC] Maghrib: %.4f\n", Magrib);
+    printk("[PRAYER CALC] Isha:    %.4f\n", Ishaa);
+    printk("[PRAYER CALC] ===============================================\n\n");
+
     return localStruct;
 }
 
@@ -641,4 +659,15 @@ void Pray_Athan(void) {
     #else
     printk("LED1 not available on this board\n");
     #endif
+}
+
+void prayer_set_timezone(int timezone_offset)
+{
+    TimeZone = timezone_offset;
+    printk("[PRAYER] Timezone set to UTC%+d for prayer calculations\n", TimeZone);
+}
+
+int prayer_get_timezone(void)
+{
+    return TimeZone;
 }

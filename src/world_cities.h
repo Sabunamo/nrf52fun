@@ -1061,7 +1061,7 @@ static const city_data_t world_cities[] = {
     {"Nuremberg", 49.4521, 11.0767, 2, "DE"},
     {"Duisburg", 51.4344, 6.7623, 2, "DE"},
     {"Bochum", 51.4819, 7.2162, 2, "DE"},
-    {"Wuppertal", 51.2562, 7.1508, 2, "DE"},
+    {"Wuppertal", 51.2562, 7.1508, 1, "DE"},  // UTC+1 (CET)
     {"Bielefeld", 52.0302, 8.5325, 2, "DE"},
     {"Bonn", 50.7374, 7.0982, 2, "DE"},
     {"Munster", 51.9607, 7.6261, 2, "DE"},

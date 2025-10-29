@@ -3,7 +3,7 @@
 #include <zephyr/drivers/display.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/uart.h>
-#include <zephyr/drivers/sensor.h>
+// #include <zephyr/drivers/sensor.h>  // Disabled - focus on GPS first
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
@@ -12,6 +12,7 @@
 #include "ili9341_tft.h"
 #include "prayerTime.h"
 #include "world_cities.h"
+#include "speaker.h"
 
 // External prayer time function
 extern double convert_Gregor_2_Julian_Day(float d, int m, int y);
@@ -21,8 +22,8 @@ extern double convert_Gregor_2_Julian_Day(float d, int m, int y);
 // Variables for prayer calculations
 double Lng = 0.0, Lat = 0.0, D = 0.0;
 
-// BME280 sensor device
-static const struct device *bme280_dev;
+// BME280 sensor device (disabled for now)
+// static const struct device *bme280_dev;
 
 void draw_character(const struct device *display_dev, char c, int x, int y, uint16_t color) {
     const uint8_t* char_pattern = font_space; // default to space
@@ -106,7 +107,8 @@ void decimal_to_time_string(double decimal_hours, char* time_str, size_t max_len
     snprintf(time_str, max_len, "%02d:%02d", hours, minutes);
 }
 
-// Function to read temperature from BME280 sensor with retry logic
+// Function to read temperature from BME280 sensor with retry logic (DISABLED)
+/*
 float read_bme280_temperature(void) {
     struct sensor_value temp_value;
     int retry_count = 3;
@@ -149,6 +151,7 @@ float read_bme280_temperature(void) {
     printk("BME280 reading failed after %d attempts\n", retry_count);
     return 0.0f;
 }
+*/
 
 void main(void)
 {
@@ -195,7 +198,8 @@ void main(void)
     // Backlight control (handled by display driver)
     printk("Backlight controlled by display driver\n");
 
-    // Initialize BME280 sensor
+    // Initialize BME280 sensor (DISABLED - focus on GPS first)
+    /*
     printk("Initializing BME280 sensor...\n");
     bme280_dev = DEVICE_DT_GET(DT_NODELABEL(bme280));
     if (!device_is_ready(bme280_dev)) {
@@ -204,12 +208,22 @@ void main(void)
     } else {
         printk("BME280 sensor initialized successfully\n");
     }
+    */
 
     // Initialize GPS
     printk("Initializing GPS...\n");
     int gps_ret = gps_init();
     if (gps_ret != 0) {
         printk("GPS initialization failed: %d\n", gps_ret);
+    }
+
+    // Initialize speaker for Athan
+    printk("Initializing Speaker...\n");
+    int speaker_ret = speaker_init();
+    if (speaker_ret != 0) {
+        printk("Speaker initialization failed: %d\n", speaker_ret);
+    } else {
+        printk("Speaker initialized successfully\n");
     }
 
     // Allow GPS to start receiving data
@@ -240,14 +254,17 @@ void main(void)
     hmi_set_countdown("Calculating...");
     hmi_set_city("GPS Location...");
 
-    // Read initial temperature from BME280 sensor
-    float initial_temp = read_bme280_temperature();
+    // Read initial temperature from BME280 sensor (DISABLED)
+    // float initial_temp = read_bme280_temperature();
     char temp_str[20];
+    snprintf(temp_str, sizeof(temp_str), "--°C");  // No temperature for now
+    /*
     if (initial_temp > 0.0f) {
         snprintf(temp_str, sizeof(temp_str), "%.1f°C", initial_temp);
     } else {
         snprintf(temp_str, sizeof(temp_str), "--°C");
     }
+    */
     hmi_set_weather(temp_str);
 
     hmi_set_current_time("--:--");
@@ -326,23 +343,13 @@ void main(void)
 
             // Update local time from GPS initially or every 60 seconds for sync
             if (last_gps_update == 0 || (now - last_gps_update) > 60000) {
-                // Add 2 hours timezone offset to GPS UTC time
-                if (strlen(current_gps.time_str) >= 8) {
-                    int utc_hours = (current_gps.time_str[0] - '0') * 10 + (current_gps.time_str[1] - '0');
-                    int minutes = (current_gps.time_str[3] - '0') * 10 + (current_gps.time_str[4] - '0');
-                    int seconds = (current_gps.time_str[6] - '0') * 10 + (current_gps.time_str[7] - '0');
+                // Use GPS DST function to get local time with automatic DST
+                int offset = gps_get_local_time(local_time, sizeof(local_time));
 
-                    // Add 2 hours for local time (UTC+2)
-                    int local_hours = utc_hours + 2;
-                    if (local_hours >= 24) {
-                        local_hours -= 24;  // Handle day rollover
-                    }
-
-                    // Format as local time
-                    snprintf(local_time, sizeof(local_time), "%02d:%02d:%02d", local_hours, minutes, seconds);
-                    last_seconds = seconds;
-
-                    printk("GPS UTC: %s -> Local UTC+2: %s\n", current_gps.time_str, local_time);
+                if (strlen(local_time) >= 8) {
+                    last_seconds = (local_time[6] - '0') * 10 + (local_time[7] - '0');
+                    printk("GPS UTC: %s -> Local (UTC%+d): %s\n",
+                           current_gps.time_str, offset, local_time);
                 } else {
                     strcpy(local_time, current_gps.time_str);
                 }
@@ -355,20 +362,10 @@ void main(void)
             if ((now - last_second_update) >= 1000) {
                 last_seconds++;
                 if (last_seconds >= 60) {
-                    // Handle minute rollover - resync with GPS and add timezone offset
-                    if (strlen(current_gps.time_str) >= 8) {
-                        int utc_hours = (current_gps.time_str[0] - '0') * 10 + (current_gps.time_str[1] - '0');
-                        int minutes = (current_gps.time_str[3] - '0') * 10 + (current_gps.time_str[4] - '0');
-                        int seconds = (current_gps.time_str[6] - '0') * 10 + (current_gps.time_str[7] - '0');
-
-                        // Add 2 hours for local time
-                        int local_hours = utc_hours + 2;
-                        if (local_hours >= 24) {
-                            local_hours -= 24;
-                        }
-
-                        snprintf(local_time, sizeof(local_time), "%02d:%02d:%02d", local_hours, minutes, seconds);
-                        last_seconds = seconds;
+                    // Handle minute rollover - resync with GPS using DST-aware function
+                    gps_get_local_time(local_time, sizeof(local_time));
+                    if (strlen(local_time) >= 8) {
+                        last_seconds = (local_time[6] - '0') * 10 + (local_time[7] - '0');
                     }
                 } else {
                     // Update just the seconds part
@@ -438,7 +435,13 @@ void main(void)
                         if (strcmp(last_prayer_triggered, current_prayers[i].time) != 0) {
                             printk("PRAYER TIME REACHED: %s at %s\n", current_prayers[i].name, current_prayers[i].time);
                             strcpy(last_prayer_triggered, current_prayers[i].time);
-                            Pray_Athan(); // Trigger LED blinking
+
+                            // Play Athan through speaker
+                            printk("Playing Athan for %s prayer...\n", current_prayers[i].name);
+                            speaker_play_athan();
+
+                            // Also trigger LED blinking
+                            Pray_Athan();
                         }
                         break;
                     }
@@ -452,6 +455,9 @@ void main(void)
                 // Set GPS coordinates for prayer calculations
                 Lat = current_gps.latitude;
                 Lng = current_gps.longitude;
+
+                // Auto-configure timezone based on GPS coordinates
+                gps_auto_configure_timezone();
 
                 // Parse GPS date (format: DD/MM/YYYY) and set current Julian Day
                 int day, month, year;
@@ -518,7 +524,8 @@ void main(void)
             printk("Prayer Times Calculated: %s\n", prayer_times_calculated ? "YES" : "NO");
             printk("Display Working: YES\n");
 
-            // Update temperature from BME280 sensor with caching
+            // Update temperature from BME280 sensor with caching (DISABLED)
+            /*
             static float last_valid_temp = 0.0f;
             float current_temp = read_bme280_temperature();
             char temp_str[20];
@@ -538,6 +545,7 @@ void main(void)
                 printk("BME280 Temperature: No valid reading available\n");
             }
             hmi_set_weather(temp_str);
+            */
 
             last_backlight_test = current_time;
         }
