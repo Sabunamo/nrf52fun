@@ -1,0 +1,92 @@
+/ {
+	lcd_parallel {
+		compatible = "gpio-leds";
+
+		/* 8-bit Data Bus */
+		lcd_d0: lcd_d0 {
+			gpios = <&gpio1 10 GPIO_ACTIVE_HIGH>;
+		};
+		lcd_d1: lcd_d1 {
+			gpios = <&gpio1 11 GPIO_ACTIVE_HIGH>;
+		};
+		lcd_d2: lcd_d2 {
+			gpios = <&gpio1 4 GPIO_ACTIVE_HIGH>;
+		};
+		lcd_d3: lcd_d3 {
+			gpios = <&gpio1 5 GPIO_ACTIVE_HIGH>;
+		};
+		lcd_d4: lcd_d4 {
+			gpios = <&gpio1 6 GPIO_ACTIVE_HIGH>;
+		};
+		lcd_d5: lcd_d5 {
+			gpios = <&gpio1 7 GPIO_ACTIVE_HIGH>;
+		};
+		lcd_d6: lcd_d6 {
+			gpios = <&gpio1 8 GPIO_ACTIVE_HIGH>;
+		};
+		lcd_d7: lcd_d7 {
+			gpios = <&gpio1 9 GPIO_ACTIVE_HIGH>;
+		};
+
+		/* Control Signals */
+		lcd_rst: lcd_rst {
+			gpios = <&gpio0 25 GPIO_ACTIVE_HIGH>;
+		};
+		lcd_cs: lcd_cs {
+			gpios = <&gpio0 7 GPIO_ACTIVE_HIGH>;
+		};
+		lcd_rs: lcd_rs {
+			gpios = <&gpio0 6 GPIO_ACTIVE_HIGH>;
+		};
+		lcd_wr: lcd_wr {
+			gpios = <&gpio0 5 GPIO_ACTIVE_HIGH>;
+		};
+		lcd_rd: lcd_rd {
+			gpios = <&gpio0 4 GPIO_ACTIVE_HIGH>;
+		};
+	};
+};
+
+/* UART0 - Console/Debug output via USB
+ * This is the default console UART on nRF5340-DK
+ * Connected to J-Link debugger for USB-to-Serial
+ */
+&uart0 {
+	status = "okay";
+	current-speed = <115200>;
+};
+
+/* GPS UART Configuration
+ * UART1 is used for GPS communication (NEO-6M)
+ *
+ * GPS NEO-6M Connection:
+ *   GPS TX → nRF5340-DK P0.22 (UART1 RX)
+ *   GPS RX → nRF5340-DK P0.20 (UART1 TX)
+ *   GPS VCC → 3.3V or 5V (check your GPS module)
+ *   GPS GND → GND
+ */
+&uart1 {
+	compatible = "nordic,nrf-uarte";
+	status = "okay";
+	current-speed = <9600>;
+	pinctrl-0 = <&uart1_gps>;
+	pinctrl-1 = <&uart1_gps_sleep>;
+	pinctrl-names = "default", "sleep";
+};
+
+&pinctrl {
+	uart1_gps: uart1_gps {
+		group1 {
+			psels = <NRF_PSEL(UART_TX, 0, 20)>,
+			        <NRF_PSEL(UART_RX, 0, 22)>;
+		};
+	};
+
+	uart1_gps_sleep: uart1_gps_sleep {
+		group1 {
+			psels = <NRF_PSEL(UART_TX, 0, 20)>,
+			        <NRF_PSEL(UART_RX, 0, 22)>;
+			low-power-enable;
+		};
+	};
+};
