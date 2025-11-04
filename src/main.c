@@ -3,12 +3,15 @@
 #include <zephyr/drivers/display.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/uart.h>
-// #include <zephyr/drivers/sensor.h>  // Disabled - focus on GPS first
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
 #include "font.h"
-#include "gps.h"
+#ifdef USE_NEO6M_GPS
+    #include "gps_neo6m.h"
+#else
+    #include "gps_neo7m.h"
+#endif
 #include "ili9341_tft.h"
 #include "prayerTime.h"
 #include "world_cities.h"
@@ -22,79 +25,6 @@ extern double convert_Gregor_2_Julian_Day(float d, int m, int y);
 // Variables for prayer calculations
 double Lng = 0.0, Lat = 0.0, D = 0.0;
 
-// BME280 sensor device (disabled for now)
-// static const struct device *bme280_dev;
-
-void draw_character(const struct device *display_dev, char c, int x, int y, uint16_t color) {
-    const uint8_t* char_pattern = font_space; // default to space
-
-    // Select character pattern
-    switch(c) {
-        case 'I': char_pattern = font_I; break;
-        case 'n': char_pattern = font_n; break;
-        case ' ': char_pattern = font_space; break;
-        case 't': char_pattern = font_t; break;
-        case 'h': char_pattern = font_h; break;
-        case 'e': char_pattern = font_e; break;
-        case 'm': char_pattern = font_m; break;
-        case 'a': char_pattern = font_a; break;
-        case 'o': char_pattern = font_o; break;
-        case 'f': char_pattern = font_f; break;
-        case 'A': char_pattern = font_A; break;
-        case 'l': char_pattern = font_l; break;
-        case 'G': char_pattern = font_G; break;
-        case 'P': char_pattern = font_P; break;
-        case 'S': char_pattern = font_S; break;
-        case ':': char_pattern = font_colon; break;
-        case 'N': char_pattern = font_N; break;
-        case 's': char_pattern = font_s; break;
-        case 'i': char_pattern = font_i; break;
-        case 'g': char_pattern = font_g; break;
-        case 'r': char_pattern = font_r; break;
-        case 'T': char_pattern = font_T; break;
-        case 'L': char_pattern = font_L; break;
-        case 'D': char_pattern = font_D; break;
-        case '.': char_pattern = font_period; break;
-        case '/': char_pattern = font_slash; break;
-        case '0': char_pattern = font_0; break;
-        case '1': char_pattern = font_1; break;
-        case '2': char_pattern = font_2; break;
-        case '3': char_pattern = font_3; break;
-        case '4': char_pattern = font_4; break;
-        case '5': char_pattern = font_5; break;
-        case '6': char_pattern = font_6; break;
-        case '7': char_pattern = font_7; break;
-        case '8': char_pattern = font_8; break;
-        case '9': char_pattern = font_9; break;
-        default: char_pattern = font_space; break;
-    }
-
-    // Draw 16x8 character (16 rows, 8 columns) - font might be 16 pixels tall
-    for (int row = 0; row < 16; row++) {
-        uint8_t pattern = char_pattern[row];
-        for (int col = 0; col < 8; col++) {
-            if (pattern & (0x80 >> col)) {  // Check if bit is set
-                uint16_t pixel = color;
-                struct display_buffer_descriptor pixel_desc = {
-                    .width = 1,
-                    .height = 1,
-                    .pitch = 1,
-                    .buf_size = sizeof(pixel),
-                };
-
-                display_write(display_dev, x + col, y + row, &pixel_desc, &pixel);
-            }
-        }
-    }
-}
-
-void draw_text(const struct device *display_dev, const char* text, int x, int y, uint16_t color) {
-    int len = strlen(text);
-    for (int i = 0; i < len; i++) {
-        draw_character(display_dev, text[i], x + (i * 9), y, color); // 9 pixels spacing
-    }
-}
-
 // Helper function to convert decimal hours to HH:MM format
 void decimal_to_time_string(double decimal_hours, char* time_str, size_t max_len) {
     // Ensure positive value and within 24 hours
@@ -106,52 +36,6 @@ void decimal_to_time_string(double decimal_hours, char* time_str, size_t max_len
 
     snprintf(time_str, max_len, "%02d:%02d", hours, minutes);
 }
-
-// Function to read temperature from BME280 sensor with retry logic (DISABLED)
-/*
-float read_bme280_temperature(void) {
-    struct sensor_value temp_value;
-    int retry_count = 3;
-    int ret;
-
-    if (!bme280_dev) {
-        printk("BME280 device not initialized\n");
-        return 0.0f;
-    }
-
-    if (!device_is_ready(bme280_dev)) {
-        printk("BME280 device not ready\n");
-        return 0.0f;
-    }
-
-    // Retry logic for sensor reading
-    for (int i = 0; i < retry_count; i++) {
-        // Add small delay before reading
-        k_msleep(10);
-
-        ret = sensor_sample_fetch(bme280_dev);
-        if (ret == 0) {
-            // Successful fetch, now get the temperature
-            ret = sensor_channel_get(bme280_dev, SENSOR_CHAN_AMBIENT_TEMP, &temp_value);
-            if (ret == 0) {
-                // Convert sensor value to float (temperature in Celsius)
-                float temperature = (float)temp_value.val1 + (float)temp_value.val2 / 1000000.0f;
-                return temperature;
-            } else {
-                printk("BME280 sensor_channel_get failed: %d (attempt %d/%d)\n", ret, i+1, retry_count);
-            }
-        } else {
-            printk("BME280 sensor_sample_fetch failed: %d (attempt %d/%d)\n", ret, i+1, retry_count);
-        }
-
-        // Wait before retry
-        k_msleep(100);
-    }
-
-    printk("BME280 reading failed after %d attempts\n", retry_count);
-    return 0.0f;
-}
-*/
 
 void main(void)
 {
@@ -198,18 +82,6 @@ void main(void)
     // Backlight control (handled by display driver)
     printk("Backlight controlled by display driver\n");
 
-    // Initialize BME280 sensor (DISABLED - focus on GPS first)
-    /*
-    printk("Initializing BME280 sensor...\n");
-    bme280_dev = DEVICE_DT_GET(DT_NODELABEL(bme280));
-    if (!device_is_ready(bme280_dev)) {
-        printk("BME280 sensor device not ready\n");
-        bme280_dev = NULL;
-    } else {
-        printk("BME280 sensor initialized successfully\n");
-    }
-    */
-
     // Initialize GPS
     printk("Initializing GPS...\n");
     int gps_ret = gps_init();
@@ -254,17 +126,9 @@ void main(void)
     hmi_set_countdown("Calculating...");
     hmi_set_city("GPS Location...");
 
-    // Read initial temperature from BME280 sensor (DISABLED)
-    // float initial_temp = read_bme280_temperature();
+    // Set default weather display (no temperature sensor)
     char temp_str[20];
-    snprintf(temp_str, sizeof(temp_str), "--°C");  // No temperature for now
-    /*
-    if (initial_temp > 0.0f) {
-        snprintf(temp_str, sizeof(temp_str), "%.1f°C", initial_temp);
-    } else {
-        snprintf(temp_str, sizeof(temp_str), "--°C");
-    }
-    */
+    snprintf(temp_str, sizeof(temp_str), "--°C");
     hmi_set_weather(temp_str);
 
     hmi_set_current_time("--:--");
@@ -523,29 +387,6 @@ void main(void)
             printk("GPS Valid: %s\n", current_gps.valid ? "YES" : "NO");
             printk("Prayer Times Calculated: %s\n", prayer_times_calculated ? "YES" : "NO");
             printk("Display Working: YES\n");
-
-            // Update temperature from BME280 sensor with caching (DISABLED)
-            /*
-            static float last_valid_temp = 0.0f;
-            float current_temp = read_bme280_temperature();
-            char temp_str[20];
-
-            if (current_temp > 0.0f) {
-                // Valid reading - update cache and display
-                last_valid_temp = current_temp;
-                snprintf(temp_str, sizeof(temp_str), "%.1f°C", current_temp);
-                printk("BME280 Temperature: %.1f°C\n", current_temp);
-            } else if (last_valid_temp > 0.0f) {
-                // Use cached value if we have one
-                snprintf(temp_str, sizeof(temp_str), "%.1f°C", last_valid_temp);
-                printk("BME280 Temperature: Using cached %.1f°C (read failed)\n", last_valid_temp);
-            } else {
-                // No valid reading available
-                snprintf(temp_str, sizeof(temp_str), "--°C");
-                printk("BME280 Temperature: No valid reading available\n");
-            }
-            hmi_set_weather(temp_str);
-            */
 
             last_backlight_test = current_time;
         }

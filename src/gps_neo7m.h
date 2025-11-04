@@ -32,7 +32,14 @@
 #include <stdbool.h>
 
 // Hardware configuration
-#define GPS_UART_NODE DT_NODELABEL(uart0)  ///< GPS UART device tree node (using UART0 for GPS)
+// Board-specific UART selection
+#if DT_NODE_EXISTS(DT_ALIAS(gps_uart))
+    #define GPS_UART_NODE DT_ALIAS(gps_uart)  ///< GPS UART from device tree alias
+#elif DT_NODE_HAS_STATUS(DT_NODELABEL(uart1), okay)
+    #define GPS_UART_NODE DT_NODELABEL(uart1)  ///< GPS on UART1 (nrf5340dk)
+#else
+    #define GPS_UART_NODE DT_NODELABEL(uart0)  ///< GPS on UART0 (nrf52dk, default)
+#endif
 #define GPS_BUFFER_SIZE 256                 ///< NMEA sentence buffer size
 
 /**
@@ -90,6 +97,23 @@ void display_gps_data(const struct device *display_dev, int x, int y);
  * @return Pointer to date string in DD/MM/YYYY format
  */
 const char* gps_get_today_date(void);
+
+/**
+ * @brief Get local time with automatic DST adjustment (CET/CEST)
+ * Automatically detects DST based on European rules:
+ * - DST starts: Last Sunday of March at 2:00 AM (UTC+2)
+ * - DST ends: Last Sunday of October at 3:00 AM (UTC+1)
+ * @param local_time Output buffer for local time
+ * @param max_len Size of output buffer (must be at least 11 bytes)
+ * @return Timezone offset applied (1 for CET winter, 2 for CEST summer, 0 if invalid)
+ */
+int gps_get_local_time(char *local_time, size_t max_len);
+
+/**
+ * @brief Auto-configure timezone based on GPS coordinates
+ * Uses GPS longitude to calculate timezone offset and updates prayer time settings
+ */
+void gps_auto_configure_timezone(void);
 
 /**
  * @brief Send test data on UART for loopback testing

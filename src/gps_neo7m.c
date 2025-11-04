@@ -10,6 +10,7 @@
 #include "font.h"
 #include "prayerTime.h"
 #include "ili9341_parallel.h"
+#include "world_cities.h"
 
 static const struct device *gps_uart;
 static char gps_buffer[GPS_BUFFER_SIZE];
@@ -530,4 +531,189 @@ void gps_get_stats(uint32_t *bytes_rx, uint32_t *sentences_parsed)
     if (sentences_parsed) {
         *sentences_parsed = total_sentences_parsed;
     }
+}
+
+/**
+ * @brief Calculate day of week (0=Sunday, 1=Monday, ..., 6=Saturday)
+ * Uses Zeller's congruence algorithm
+ */
+static int calculate_day_of_week(int day, int month, int year)
+{
+    if (month < 3) {
+        month += 12;
+        year--;
+    }
+    int q = day;
+    int m = month;
+    int k = year % 100;
+    int j = year / 100;
+    int h = (q + (13 * (m + 1)) / 5 + k + k / 4 + j / 4 - 2 * j) % 7;
+    // Convert to 0=Sunday format
+    return (h + 6) % 7;
+}
+
+/**
+ * @brief Find last Sunday of a given month/year
+ * @return Day of month (1-31) of the last Sunday
+ */
+static int find_last_sunday(int month, int year)
+{
+    // Days in each month
+    int days_in_month[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+
+    // Check for leap year
+    if (month == 2 && ((year % 4 == 0 && year % 100 != 0) || (year % 400 == 0))) {
+        days_in_month[1] = 29;
+    }
+
+    int last_day = days_in_month[month - 1];
+
+    // Find last Sunday by checking backwards from end of month
+    for (int day = last_day; day >= 1; day--) {
+        if (calculate_day_of_week(day, month, year) == 0) {  // 0 = Sunday
+            return day;
+        }
+    }
+    return last_day;  // Fallback (shouldn't happen)
+}
+
+/**
+ * @brief Check if date is in DST period (European rules)
+ * DST starts: Last Sunday of March at 2:00 AM
+ * DST ends: Last Sunday of October at 3:00 AM
+ * @return true if in DST period, false otherwise
+ */
+static bool is_dst_active(int day, int month, int year, int hour)
+{
+    // DST not active from November to February
+    if (month < 3 || month > 10) {
+        return false;
+    }
+
+    // Definitely active from April to September
+    if (month > 3 && month < 10) {
+        return true;
+    }
+
+    // March: Check if after last Sunday at 2:00 AM
+    if (month == 3) {
+        int last_sunday = find_last_sunday(3, year);
+        if (day > last_sunday) {
+            return true;
+        } else if (day == last_sunday && hour >= 2) {
+            return true;
+        }
+        return false;
+    }
+
+    // October: Check if before last Sunday at 3:00 AM
+    if (month == 10) {
+        int last_sunday = find_last_sunday(10, year);
+        if (day < last_sunday) {
+            return true;
+        } else if (day == last_sunday && hour < 3) {
+            return true;
+        }
+        return false;
+    }
+
+    return false;
+}
+
+/**
+ * @brief Get local time with automatic DST adjustment (CET/CEST)
+ * @param local_time Output buffer for local time (must be at least 11 bytes)
+ * @param max_len Size of output buffer
+ * @return Timezone offset applied (1 for CET, 2 for CEST, 0 if invalid)
+ */
+int gps_get_local_time(char *local_time, size_t max_len)
+{
+    if (!current_gps.time_str[0] || !current_gps.date_valid || !local_time || max_len < 11) {
+        if (local_time && max_len > 0) {
+            snprintf(local_time, max_len, "--:--:--");
+        }
+        return 0;
+    }
+
+    int hours, minutes, seconds;
+    if (sscanf(current_gps.time_str, "%d:%d:%d", &hours, &minutes, &seconds) != 3) {
+        snprintf(local_time, max_len, "--:--:--");
+        return 0;
+    }
+
+    int day, month, year;
+    if (sscanf(current_gps.date_str, "%d/%d/%d", &day, &month, &year) != 3) {
+        snprintf(local_time, max_len, "--:--:--");
+        return 0;
+    }
+
+    // Determine timezone offset (CET = UTC+1, CEST = UTC+2)
+    int offset = is_dst_active(day, month, year, hours) ? 2 : 1;
+
+    // Apply offset
+    hours += offset;
+
+    // Handle day wraparound
+    if (hours >= 24) {
+        hours -= 24;
+    } else if (hours < 0) {
+        hours += 24;
+    }
+
+    snprintf(local_time, max_len, "%02d:%02d:%02d", hours, minutes, seconds);
+    return offset;
+}
+
+/**
+ * @brief Auto-configure timezone based on GPS coordinates
+ * Uses nearest city timezone data with fallback to longitude calculation
+ */
+void gps_auto_configure_timezone(void)
+{
+    if (!current_gps.valid) {
+        printk("NEO-7M: Cannot auto-configure timezone - GPS not valid\n");
+        return;
+    }
+
+    // Calculate timezone from longitude (15 degrees per hour) as fallback
+    double tz_calc = current_gps.longitude / 15.0;
+    int calculated_tz = (int)(tz_calc >= 0 ? tz_calc + 0.5 : tz_calc - 0.5);
+
+    // Clamp to valid range
+    if (calculated_tz < -12) calculated_tz = -12;
+    if (calculated_tz > 14) calculated_tz = 14;
+
+    // Find nearest city to get the political timezone
+    const city_data_t* nearest_city = find_nearest_city(current_gps.latitude, current_gps.longitude);
+
+    int final_tz = calculated_tz;  // Default to calculated
+
+    if (nearest_city) {
+        int city_tz = nearest_city->timezone_offset;
+
+        printk("NEO-7M: Nearest city: %s (%s) has timezone UTC%+d\n",
+               nearest_city->city_name, nearest_city->country, city_tz);
+        printk("NEO-7M: Calculated timezone from longitude: UTC%+d\n", calculated_tz);
+
+        // Compare calculated vs city timezone
+        if (calculated_tz == city_tz) {
+            printk("NEO-7M: Calculated and city timezones MATCH - using UTC%+d\n", calculated_tz);
+            final_tz = calculated_tz;
+        } else {
+            printk("NEO-7M: Calculated (UTC%+d) and city (UTC%+d) timezones DIFFER\n",
+                   calculated_tz, city_tz);
+            printk("NEO-7M: Using city timezone UTC%+d (political boundary)\n", city_tz);
+            final_tz = city_tz;
+        }
+    } else {
+        printk("NEO-7M: No nearest city found - using calculated timezone UTC%+d\n", calculated_tz);
+    }
+
+    printk("NEO-7M: Longitude: %.4f, Final timezone: UTC%+d\n",
+           current_gps.longitude, final_tz);
+
+    // Update prayer time timezone
+    prayer_set_timezone(final_tz);
+
+    printk("NEO-7M: Timezone configured to UTC%+d\n", final_tz);
 }

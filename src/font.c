@@ -108,3 +108,98 @@ const uint8_t font_slash[16] = {0x00,0x00,0x03,0x03,0x06,0x06,0x0C,0x0C,0x18,0x1
 const uint8_t font_dash[16] = {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x7E,0x7E,0x00,0x00,0x00,0x00,0x00,0x00,0x00};
 const uint8_t font_percent[16] = {0x00,0x00,0x23,0x33,0x08,0x0C,0x04,0x06,0x03,0x01,0x19,0x18,0x0C,0x04,0x00,0x00};
 const uint8_t font_degree[16] = {0x00,0x00,0x38,0x44,0x44,0x38,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00};
+
+// Font lookup function
+const uint8_t* font_get_glyph(char c) {
+    // Lowercase letters (a-z)
+    if (c >= 'a' && c <= 'z') {
+        switch(c) {
+            case 'a': return font_a;
+            case 'b': return font_b;
+            case 'c': return font_c;
+            case 'd': return font_d;
+            case 'e': return font_e;
+            case 'f': return font_f;
+            case 'g': return font_g;
+            case 'h': return font_h;
+            case 'i': return font_i;
+            case 'j': return font_j;
+            case 'k': return font_k;
+            case 'l': return font_l;
+            case 'm': return font_m;
+            case 'n': return font_n;
+            case 'o': return font_o;
+            case 'p': return font_p;
+            case 'q': return font_q;
+            case 'r': return font_r;
+            case 's': return font_s;
+            case 't': return font_t;
+            case 'u': return font_u;
+            case 'v': return font_v;
+            case 'w': return font_w;
+            case 'x': return font_x;
+            case 'y': return font_y;
+            case 'z': return font_z;
+        }
+    }
+
+    // Uppercase letters (A-Z)
+    if (c >= 'A' && c <= 'Z') {
+        switch(c) {
+            case 'A': return font_A;
+            case 'B': return font_B;
+            case 'C': return font_C;
+            case 'D': return font_D;
+            case 'E': return font_E;
+            case 'F': return font_F;
+            case 'G': return font_G;
+            case 'H': return font_H;
+            case 'I': return font_I;
+            case 'J': return font_J;
+            case 'K': return font_K;
+            case 'L': return font_L;
+            case 'M': return font_M;
+            case 'N': return font_N;
+            case 'O': return font_O;
+            case 'P': return font_P;
+            case 'Q': return font_Q;
+            case 'R': return font_R;
+            case 'S': return font_S;
+            case 'T': return font_T;
+            case 'U': return font_U;
+            case 'V': return font_V;
+            case 'W': return font_W;
+            case 'X': return font_X;
+            case 'Y': return font_Y;
+            case 'Z': return font_Z;
+        }
+    }
+
+    // Digits (0-9)
+    if (c >= '0' && c <= '9') {
+        switch(c) {
+            case '0': return font_0;
+            case '1': return font_1;
+            case '2': return font_2;
+            case '3': return font_3;
+            case '4': return font_4;
+            case '5': return font_5;
+            case '6': return font_6;
+            case '7': return font_7;
+            case '8': return font_8;
+            case '9': return font_9;
+        }
+    }
+
+    // Special characters
+    switch(c) {
+        case ' ': return font_space;
+        case ':': return font_colon;
+        case '.': return font_period;
+        case '/': return font_slash;
+        case '-': return font_dash;
+        case '%': return font_percent;
+        case '°': return font_degree;
+        default: return font_space; // Return space for unknown characters
+    }
+}

@@ -73,36 +73,6 @@ extern const uint8_t font_7[16];
 extern const uint8_t font_8[16];
 extern const uint8_t font_9[16];
 
-// Arabic letters (basic set for the text "بسم الله الرحمن الرحيم")
-extern const uint8_t font_arabic_alif[16];      // ا
-extern const uint8_t font_arabic_baa[16];       // ب
-extern const uint8_t font_arabic_taa[16];       // ت
-extern const uint8_t font_arabic_thaa[16];      // ث
-extern const uint8_t font_arabic_jeem[16];      // ج
-extern const uint8_t font_arabic_haa[16];       // ح
-extern const uint8_t font_arabic_khaa[16];      // خ
-extern const uint8_t font_arabic_dal[16];       // د
-extern const uint8_t font_arabic_thal[16];      // ذ
-extern const uint8_t font_arabic_raa[16];       // ر
-extern const uint8_t font_arabic_zay[16];       // ز
-extern const uint8_t font_arabic_seen[16];      // س
-extern const uint8_t font_arabic_sheen[16];     // ش
-extern const uint8_t font_arabic_sad[16];       // ص
-extern const uint8_t font_arabic_dad[16];       // ض
-extern const uint8_t font_arabic_tah[16];       // ط
-extern const uint8_t font_arabic_zah[16];       // ظ
-extern const uint8_t font_arabic_ain[16];       // ع
-extern const uint8_t font_arabic_ghain[16];     // غ
-extern const uint8_t font_arabic_faa[16];       // ف
-extern const uint8_t font_arabic_qaf[16];       // ق
-extern const uint8_t font_arabic_kaf[16];       // ك
-extern const uint8_t font_arabic_lam[16];       // ل
-extern const uint8_t font_arabic_meem[16];      // م
-extern const uint8_t font_arabic_noon[16];      // ن
-extern const uint8_t font_arabic_heh[16];       // ه
-extern const uint8_t font_arabic_waw[16];       // و
-extern const uint8_t font_arabic_yaa[16];       // ي
-
 // Special characters
 extern const uint8_t font_space[16];
 extern const uint8_t font_colon[16];
@@ -111,5 +81,8 @@ extern const uint8_t font_slash[16];
 extern const uint8_t font_dash[16];
 extern const uint8_t font_percent[16];
 extern const uint8_t font_degree[16];
+
+// Function to get glyph for any character
+const uint8_t* font_get_glyph(char c);
 
 #endif // FONT_H

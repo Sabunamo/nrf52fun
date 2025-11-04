@@ -5,7 +5,6 @@
 #include <zephyr/device.h>
 #include <zephyr/drivers/display.h>
 #include <stdbool.h>
-#include "gps.h"
 #include "prayerTime.h"
 
 // Display specifications for 320x240 RGB565
@@ -43,10 +42,10 @@
 
 // Middle section - Prayer times (centered with equal margins)
 #define PRAYER_START_Y      (TOP_BAR_HEIGHT + 10)
-#define PRAYER_HEIGHT       25
-#define PRAYER_MARGIN       60                          // Equal margin from both sides
+#define PRAYER_HEIGHT       25                          // Height for 16x16 font (16px tall + spacing)
+#define PRAYER_MARGIN       45                          // Equal margin from both sides
 #define PRAYER_NAME_X       PRAYER_MARGIN               // Left-aligned prayer names
-#define PRAYER_TIME_X       (DISPLAY_WIDTH - PRAYER_MARGIN - 45)  // Right-aligned times (45px for "HH:MM")
+#define PRAYER_TIME_X       (DISPLAY_WIDTH - PRAYER_MARGIN - 85)  // Right-aligned times (85px for "HH:MM" in 16x16)
 #define COUNTDOWN_Y         (PRAYER_START_Y + 6 * PRAYER_HEIGHT + 10)
 
 // Bottom bar positions
@@ -135,5 +134,47 @@ void hmi_draw_rectangle(const struct device *display_dev, int x, int y,
 
 // Image display functions
 int hmi_display_bmp_image(const struct device *display_dev, const char* filename);
+
+// ========================================================================
+// Compatible API with ili9341_parallel.h (for unified main.c)
+// ========================================================================
+
+/**
+ * @brief Initialize ILI9341 display (compatible wrapper)
+ * @return 0 on success, negative error code on failure
+ */
+int ili9341_init(void);
+
+/**
+ * @brief Fill entire screen with a color (compatible wrapper)
+ * @param color RGB565 color value
+ */
+void ili9341_fill_screen(uint16_t color);
+
+/**
+ * @brief Set display rotation (compatible wrapper)
+ * @param rotation 0=portrait, 1=landscape, 2=portrait180, 3=landscape180
+ */
+void ili9341_set_rotation(uint8_t rotation);
+
+/**
+ * @brief Draw a string on the display (compatible wrapper)
+ * @param x X coordinate
+ * @param y Y coordinate
+ * @param str String to display
+ * @param fg_color Foreground color (RGB565)
+ * @param bg_color Background color (RGB565)
+ * @param size Font size multiplier (1=8x16, 2=16x32, etc.)
+ */
+void ili9341_draw_string(int x, int y, const char *str, uint16_t fg_color, uint16_t bg_color, int size);
+
+/**
+ * @brief Draw a horizontal line (compatible wrapper)
+ * @param x Starting X coordinate
+ * @param y Y coordinate
+ * @param w Width in pixels
+ * @param color Line color (RGB565)
+ */
+void ili9341_draw_hline(int x, int y, int w, uint16_t color);
 
 #endif // PRAYER_HMI_H

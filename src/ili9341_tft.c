@@ -1,6 +1,7 @@
 #include "ili9341_tft.h"
-#include "gps.h"
+#include "gps_neo7m.h"
 #include "font.h"
+#include "font_16x16.h"
 #include <zephyr/drivers/gpio.h>
 
 static hmi_display_data_t hmi_data = {0};
@@ -8,7 +9,10 @@ static hmi_display_data_t hmi_data = {0};
 
 static void hmi_draw_character(const struct device *display_dev, char c, int x, int y, uint16_t color);
 static void hmi_draw_text(const struct device *display_dev, const char* text, int x, int y, uint16_t color);
+static void hmi_draw_text_scaled(const struct device *display_dev, const char* text, int x, int y, uint16_t color, int scale);
 static void hmi_draw_character_scaled(const struct device *display_dev, char c, int x, int y, uint16_t color, int scale);
+static void hmi_draw_character_16x16(const struct device *display_dev, char c, int x, int y, uint16_t color);
+static void hmi_draw_text_16x16(const struct device *display_dev, const char* text, int x, int y, uint16_t color);
 static void hmi_clear_temperature_area(const struct device *display_dev, int x, int y);
 static void hmi_draw_temperature(const struct device *display_dev, const char* temp_str, int x, int y, uint16_t color);
 
@@ -147,25 +151,8 @@ static void hmi_draw_text(const struct device *display_dev, const char* text, in
 
 // Function to draw character with scaling (1=normal, 2=double size, etc.)
 static void hmi_draw_character_scaled(const struct device *display_dev, char c, int x, int y, uint16_t color, int scale) {
-    const uint8_t* char_pattern = font_space; // default to space
-
-    // Select character pattern for numbers and temperature symbols
-    switch(c) {
-        case '0': char_pattern = font_0; break;
-        case '1': char_pattern = font_1; break;
-        case '2': char_pattern = font_2; break;
-        case '3': char_pattern = font_3; break;
-        case '4': char_pattern = font_4; break;
-        case '5': char_pattern = font_5; break;
-        case '6': char_pattern = font_6; break;
-        case '7': char_pattern = font_7; break;
-        case '8': char_pattern = font_8; break;
-        case '9': char_pattern = font_9; break;
-        case '.': char_pattern = font_period; break;
-        case 'C': char_pattern = font_C; break;
-        case ' ': char_pattern = font_space; break;
-        default: char_pattern = font_space; break;
-    }
+    // Use the font lookup table for full character support
+    const uint8_t* char_pattern = font_get_glyph(c);
 
     // Draw character with scaling
     for (int row = 0; row < 16; row++) {
@@ -187,6 +174,46 @@ static void hmi_draw_character_scaled(const struct device *display_dev, char c, 
                 }
             }
         }
+    }
+}
+
+// Function to draw text with scaling (1=normal, 2=double size, etc.)
+static void hmi_draw_text_scaled(const struct device *display_dev, const char* text, int x, int y, uint16_t color, int scale) {
+    int len = strlen(text);
+    int char_spacing = (8 * scale) + scale; // Scaled character width + 1 pixel spacing per scale
+    for (int i = 0; i < len; i++) {
+        hmi_draw_character_scaled(display_dev, text[i], x + (i * char_spacing), y, color, scale);
+    }
+}
+
+// Function to draw a single 16x16 character
+static void hmi_draw_character_16x16(const struct device *display_dev, char c, int x, int y, uint16_t color) {
+    const uint16_t* char_pattern = font_get_glyph_16x16(c);
+
+    // Draw 16x16 character (16 rows, 16 columns)
+    for (int row = 0; row < 16; row++) {
+        uint16_t pattern = char_pattern[row];
+        for (int col = 0; col < 16; col++) {
+            if (pattern & (0x8000 >> col)) {  // Check if bit is set (MSB first)
+                uint16_t pixel = color;
+                struct display_buffer_descriptor pixel_desc = {
+                    .width = 1,
+                    .height = 1,
+                    .pitch = 1,
+                    .buf_size = sizeof(pixel),
+                };
+                display_write(display_dev, x + col, y + row, &pixel_desc, &pixel);
+            }
+        }
+    }
+}
+
+// Function to draw text using 16x16 font
+static void hmi_draw_text_16x16(const struct device *display_dev, const char* text, int x, int y, uint16_t color) {
+    int len = strlen(text);
+    int char_spacing = 17; // 16 pixels width + 1 pixel spacing
+    for (int i = 0; i < len; i++) {
+        hmi_draw_character_16x16(display_dev, text[i], x + (i * char_spacing), y, color);
     }
 }
 
@@ -355,8 +382,24 @@ void hmi_draw_text_centered(const struct device *display_dev, const char* text, 
     hmi_draw_text(display_dev, text, start_x, y, color);
 }
 
+// Draw centered text with scaling
+static void hmi_draw_text_centered_scaled(const struct device *display_dev, const char* text, int center_x, int y, uint16_t color, int scale)
+{
+    int char_spacing = (8 * scale) + scale;
+    int text_width = strlen(text) * char_spacing;
+    int start_x = center_x - (text_width / 2);
+    if (start_x < 0) start_x = 0;
+    hmi_draw_text_scaled(display_dev, text, start_x, y, color, scale);
+}
+
 void hmi_draw_top_bar(const struct device *display_dev)
 {
+    // Check GPS validity - don't draw if GPS not valid
+    extern struct gps_data current_gps;
+    if (!current_gps.valid) {
+        return;
+    }
+
     hmi_draw_rectangle(display_dev, 0, 0, DISPLAY_WIDTH, TOP_BAR_HEIGHT, COLOR_DARK_GRAY);
 
     hmi_draw_text(display_dev, hmi_data.city, CITY_X, CITY_Y, COLOR_WHITE);
@@ -377,6 +420,15 @@ void hmi_draw_top_bar(const struct device *display_dev)
 
 void hmi_draw_prayer_times(const struct device *display_dev)
 {
+    // Check if GPS is valid - if not, show "Waiting for GPS..." message
+    extern struct gps_data current_gps;
+    if (!current_gps.valid) {
+        // Draw "Waiting for GPS..." centered on screen with 2x font
+        int center_y = (DISPLAY_HEIGHT / 2) - 16; // Center vertically (16 is half of 2x font height)
+        hmi_draw_text_centered_scaled(display_dev, "Waiting for GPS...", DISPLAY_WIDTH / 2, center_y, COLOR_CYAN, 2);
+        return;
+    }
+
     int current_y = PRAYER_START_Y;
 
     for (int i = 0; i < PRAYER_COUNT; i++) {
@@ -391,8 +443,9 @@ void hmi_draw_prayer_times(const struct device *display_dev)
         // Draw centered prayer background with margins
         hmi_draw_rectangle(display_dev, PRAYER_MARGIN - 10, current_y, DISPLAY_WIDTH - 2 * (PRAYER_MARGIN - 10), PRAYER_HEIGHT, bg_color);
 
-        hmi_draw_text(display_dev, hmi_data.prayers[i].name, PRAYER_NAME_X, current_y + 5, text_color);
-        hmi_draw_text(display_dev, hmi_data.prayers[i].time, PRAYER_TIME_X, current_y + 5, text_color);
+        // Draw prayer name and time with 16x16 font
+        hmi_draw_text_16x16(display_dev, hmi_data.prayers[i].name, PRAYER_NAME_X, current_y + 5, text_color);
+        hmi_draw_text_16x16(display_dev, hmi_data.prayers[i].time, PRAYER_TIME_X, current_y + 5, text_color);
 
         current_y += PRAYER_HEIGHT;
     }
@@ -404,6 +457,12 @@ void hmi_draw_prayer_times(const struct device *display_dev)
 
 void hmi_draw_bottom_bar(const struct device *display_dev)
 {
+    // Check GPS validity - don't draw if GPS not valid
+    extern struct gps_data current_gps;
+    if (!current_gps.valid) {
+        return;
+    }
+
     int bottom_y = DISPLAY_HEIGHT - BOTTOM_BAR_HEIGHT;
     hmi_draw_rectangle(display_dev, 0, bottom_y, DISPLAY_WIDTH, BOTTOM_BAR_HEIGHT, COLOR_DARK_GRAY);
 
@@ -426,15 +485,36 @@ static char last_temp_displayed[8] = {0};
 
 void hmi_update_display(const struct device *display_dev)
 {
+    // Check if GPS is valid
+    extern struct gps_data current_gps;
+
     // First time initialization - draw everything once
     if (!hmi_data.screen_initialized) {
+        printk("hmi_update_display: First init, GPS valid = %d\n", current_gps.valid);
         hmi_clear_screen(display_dev);
+
+        // If GPS not valid, only show waiting message
+        if (!current_gps.valid) {
+            printk("Drawing waiting message in hmi_update_display\n");
+            int center_y = (DISPLAY_HEIGHT / 2) - 16;
+            hmi_draw_text_centered_scaled(display_dev, "Waiting for GPS...", DISPLAY_WIDTH / 2, center_y, COLOR_CYAN, 2);
+            hmi_data.screen_initialized = true;
+            return;
+        }
+
+        printk("Drawing full display in hmi_update_display (GPS valid)\n");
+        // GPS is valid, draw normal display
         hmi_draw_top_bar(display_dev);
         hmi_draw_prayer_times(display_dev);
         hmi_draw_bottom_bar(display_dev);
         strcpy(last_time_displayed, hmi_data.current_time);
         strcpy(last_temp_displayed, hmi_data.weather_temp);
         hmi_data.screen_initialized = true;
+        return;
+    }
+
+    // If GPS not valid, only show waiting message (don't update anything else)
+    if (!current_gps.valid) {
         return;
     }
 
@@ -477,8 +557,29 @@ void hmi_update_display(const struct device *display_dev)
 
 void hmi_force_full_update(const struct device *display_dev)
 {
+    // Check if GPS is valid
+    extern struct gps_data current_gps;
+
+    printk("hmi_force_full_update: GPS valid = %d\n", current_gps.valid);
+
     // Force complete screen redraw (used for prayer times, dates, etc.)
     hmi_clear_screen(display_dev);
+
+    // If GPS not valid, only show waiting message
+    if (!current_gps.valid) {
+        printk("GPS not valid - showing waiting message only\n");
+        int center_y = (DISPLAY_HEIGHT / 2) - 16;
+        hmi_draw_text_centered_scaled(display_dev, "Waiting for GPS...", DISPLAY_WIDTH / 2, center_y, COLOR_CYAN, 2);
+        hmi_data.screen_initialized = true;
+
+        // Clear the tracking variables to prevent any updates
+        last_time_displayed[0] = '\0';
+        last_temp_displayed[0] = '\0';
+        return;
+    }
+
+    printk("GPS valid - drawing full display\n");
+    // GPS is valid, draw everything
     hmi_draw_top_bar(display_dev);
     hmi_draw_prayer_times(display_dev);
     hmi_draw_bottom_bar(display_dev);
@@ -562,3 +663,141 @@ void hmi_set_brightness(uint8_t level)
     }
 }
 
+// ========================================================================
+// Compatible API with ili9341_parallel.h (for unified main.c)
+// ========================================================================
+
+static const struct device *ili9341_display_dev = NULL;
+
+/**
+ * @brief Initialize ILI9341 display (compatible wrapper)
+ * @return 0 on success, negative error code on failure
+ */
+int ili9341_init(void)
+{
+    ili9341_display_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_display));
+
+    if (!device_is_ready(ili9341_display_dev)) {
+        printk("Display device not ready\n");
+        return -ENODEV;
+    }
+
+    printk("ILI9341 SPI TFT display initialized (via Zephyr display driver)\n");
+
+    // Turn on display (disable blanking)
+    int ret = display_blanking_off(ili9341_display_dev);
+    if (ret < 0) {
+        printk("Failed to turn off display blanking: %d\n", ret);
+    } else {
+        printk("Display blanking disabled successfully\n");
+    }
+
+    // Initialize HMI layer
+    hmi_init();
+
+    // Clear screen to verify display is working
+    printk("Clearing screen to black...\n");
+    hmi_clear_screen(ili9341_display_dev);
+    printk("Screen cleared\n");
+
+    // Try drawing a test pattern
+    printk("Drawing test pattern...\n");
+    for (int y = 0; y < 50; y++) {
+        for (int x = 0; x < 50; x++) {
+            uint16_t pixel = COLOR_RED;
+            struct display_buffer_descriptor desc = {
+                .width = 1,
+                .height = 1,
+                .pitch = 1,
+                .buf_size = sizeof(pixel),
+            };
+            display_write(ili9341_display_dev, x, y, &desc, &pixel);
+        }
+    }
+    printk("Test pattern drawn (50x50 red square at 0,0)\n");
+
+    return 0;
+}
+
+/**
+ * @brief Fill entire screen with a color (compatible wrapper)
+ * @param color RGB565 color value
+ */
+void ili9341_fill_screen(uint16_t color)
+{
+    if (!ili9341_display_dev) {
+        return;
+    }
+
+    // Use HMI layer's clear screen for black, otherwise draw rectangle
+    if (color == COLOR_BLACK) {
+        hmi_clear_screen(ili9341_display_dev);
+    } else {
+        hmi_draw_rectangle(ili9341_display_dev, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, color);
+    }
+}
+
+/**
+ * @brief Set display rotation (compatible wrapper)
+ * @param rotation 0=portrait, 1=landscape, 2=portrait180, 3=landscape180
+ */
+void ili9341_set_rotation(uint8_t rotation)
+{
+    // Rotation is set in device tree for SPI TFT
+    // This is a no-op for compatibility
+    (void)rotation;
+}
+
+/**
+ * @brief Draw a string on the display (compatible wrapper)
+ * @param x X coordinate
+ * @param y Y coordinate
+ * @param str String to display
+ * @param fg_color Foreground color (RGB565)
+ * @param bg_color Background color (RGB565)
+ * @param size Font size multiplier (1=8x16, 2=16x32, etc.)
+ */
+void ili9341_draw_string(int x, int y, const char *str, uint16_t fg_color, uint16_t bg_color, int size)
+{
+    if (!ili9341_display_dev || !str) {
+        return;
+    }
+
+    // If background color requested, draw rectangle first
+    if (bg_color != fg_color) {
+        int str_width = strlen(str) * CHAR_WIDTH * size;
+        int str_height = CHAR_HEIGHT * size;
+        hmi_draw_rectangle(ili9341_display_dev, x, y, str_width, str_height, bg_color);
+    }
+
+    // Draw each character using HMI layer's character drawing
+    int current_x = x;
+    for (int i = 0; str[i] != '\0'; i++) {
+        if (size == 1) {
+            // Normal size - use hmi_draw_character
+            hmi_draw_character(ili9341_display_dev, str[i], current_x, y, fg_color);
+            current_x += CHAR_WIDTH;
+        } else {
+            // Scaled size - use hmi_draw_character_scaled
+            hmi_draw_character_scaled(ili9341_display_dev, str[i], current_x, y, fg_color, size);
+            current_x += CHAR_WIDTH * size;
+        }
+    }
+}
+
+/**
+ * @brief Draw a horizontal line (compatible wrapper)
+ * @param x Starting X coordinate
+ * @param y Y coordinate
+ * @param w Width in pixels
+ * @param color Line color (RGB565)
+ */
+void ili9341_draw_hline(int x, int y, int w, uint16_t color)
+{
+    if (!ili9341_display_dev) {
+        return;
+    }
+
+    // Use HMI layer's rectangle function with height=1
+    hmi_draw_rectangle(ili9341_display_dev, x, y, w, 1, color);
+}
