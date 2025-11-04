@@ -102,7 +102,6 @@ void main(void)
     k_msleep(200);
 
     // Initialize with default prayer times (new order with SHURUQ)
-    // Keep this for Athan triggering, but don't display until GPS is valid
     prayer_time_t current_prayers[PRAYER_COUNT] = {
         {"Fajr", "05:30", false},
         {"Shuruq", "06:45", false},
@@ -112,8 +111,27 @@ void main(void)
         {"Isha", "20:00", false}
     };
 
-    // Don't set placeholder values - they will show on GPS waiting screen
-    // Only set brightness (non-text element)
+    // Set initial HMI data with dynamic next prayer detection
+    // Create default prayer structure for initial calculation
+    prayer_myFloats_t default_prayers = {
+        .fajjir = 5.5,    // 05:30
+        .sunRise = 6.75,  // 06:45
+        .Dhuhur = 12.25,  // 12:15
+        .Assr = 15.75,    // 15:45
+        .Maghreb = 18.33, // 18:20
+        .Ishaa = 20.0     // 20:00
+    };
+    int next_prayer = get_next_prayer_index("--:--", &default_prayers);
+    hmi_set_prayer_times(current_prayers, next_prayer);
+    hmi_set_countdown("Calculating...");
+    hmi_set_city("GPS Location...");
+
+    // Set default weather display (no temperature sensor)
+    char temp_str[20];
+    snprintf(temp_str, sizeof(temp_str), "--°C");
+    hmi_set_weather(temp_str);
+
+    hmi_set_current_time("--:--");
     hmi_set_brightness(75);
 
     // Force initial HMI display setup
