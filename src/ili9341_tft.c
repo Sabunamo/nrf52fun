@@ -306,13 +306,8 @@ void hmi_init(void)
 {
     memset(&hmi_data, 0, sizeof(hmi_display_data_t));
 
-    strcpy(hmi_data.city, "Unknown");
-    strcpy(hmi_data.gregorian_date, "--/--/----");
-    strcpy(hmi_data.hijri_date, "--/--/----");
-    strcpy(hmi_data.day_of_week, "---");
-    strcpy(hmi_data.countdown_text, "Next prayer in --:--");
-    strcpy(hmi_data.weather_temp, "--°C");
-    strcpy(hmi_data.current_time, "--:--");
+    // Don't set placeholder text - will show on GPS waiting screen
+    // Only set non-text defaults
     hmi_data.brightness_level = 50;
     hmi_data.next_prayer_index = -1;
 
@@ -321,17 +316,10 @@ void hmi_init(void)
     hmi_data.needs_time_update = false;
     hmi_data.screen_initialized = false;
 
+    // Prayer names will be set when GPS acquires lock and prayer times are calculated
     for (int i = 0; i < PRAYER_COUNT; i++) {
-        strcpy(hmi_data.prayers[i].name, "-----");
-        strcpy(hmi_data.prayers[i].time, "--:--");
         hmi_data.prayers[i].is_next = false;
     }
-
-    strcpy(hmi_data.prayers[PRAYER_FAJR].name, "Fajr");
-    strcpy(hmi_data.prayers[PRAYER_DHUHR].name, "Dhuhr");
-    strcpy(hmi_data.prayers[PRAYER_ASR].name, "Asr");
-    strcpy(hmi_data.prayers[PRAYER_MAGHRIB].name, "Maghrib");
-    strcpy(hmi_data.prayers[PRAYER_ISHA].name, "Isha");
 }
 
 void hmi_clear_screen(const struct device *display_dev)
@@ -460,18 +448,24 @@ void hmi_draw_bottom_bar(const struct device *display_dev)
     // Check GPS validity - don't draw if GPS not valid
     extern struct gps_data current_gps;
     if (!current_gps.valid) {
+        printk("hmi_draw_bottom_bar: GPS not valid - skipping\n");
         return;
     }
+
+    printk("hmi_draw_bottom_bar: Drawing with time='%s', temp='%s'\n",
+           hmi_data.current_time, hmi_data.weather_temp);
 
     int bottom_y = DISPLAY_HEIGHT - BOTTOM_BAR_HEIGHT;
     hmi_draw_rectangle(display_dev, 0, bottom_y, DISPLAY_WIDTH, BOTTOM_BAR_HEIGHT, COLOR_DARK_GRAY);
 
     if (hmi_data.weather_valid && hmi_data.weather_temp[0] != '-') {
+        printk("  Drawing weather temp: '%s'\n", hmi_data.weather_temp);
         hmi_draw_temperature(display_dev, hmi_data.weather_temp, WEATHER_X, WEATHER_Y, COLOR_CYAN);
     }
 
     // Use fixed position for consistent time display
-    hmi_draw_text(display_dev, hmi_data.current_time, CLOCK_X, CLOCK_Y, COLOR_WHITE);
+    printk("  Drawing time: '%s'\n", hmi_data.current_time);
+    hmi_draw_text_16x16(display_dev, hmi_data.current_time, CLOCK_X, CLOCK_Y, COLOR_WHITE);
 
     hmi_draw_text(display_dev, "SET", SETTINGS_X, SETTINGS_Y, COLOR_LIGHT_GRAY);
 
@@ -491,6 +485,8 @@ void hmi_update_display(const struct device *display_dev)
     // First time initialization - draw everything once
     if (!hmi_data.screen_initialized) {
         printk("hmi_update_display: First init, GPS valid = %d\n", current_gps.valid);
+        printk("  HMI current_time: '%s'\n", hmi_data.current_time);
+        printk("  HMI weather_temp: '%s'\n", hmi_data.weather_temp);
         hmi_clear_screen(display_dev);
 
         // If GPS not valid, only show waiting message
@@ -499,6 +495,7 @@ void hmi_update_display(const struct device *display_dev)
             int center_y = (DISPLAY_HEIGHT / 2) - 16;
             hmi_draw_text_centered_scaled(display_dev, "Waiting for GPS...", DISPLAY_WIDTH / 2, center_y, COLOR_CYAN, 2);
             hmi_data.screen_initialized = true;
+            printk("Waiting screen displayed - DONE\n");
             return;
         }
 
@@ -528,7 +525,7 @@ void hmi_update_display(const struct device *display_dev)
         k_usleep(500);
 
         // Draw new time at exact position
-        hmi_draw_text(display_dev, hmi_data.current_time, CLOCK_X, CLOCK_Y, COLOR_WHITE);
+        hmi_draw_text_16x16(display_dev, hmi_data.current_time, CLOCK_X, CLOCK_Y, COLOR_WHITE);
 
         // Update last displayed time
         strcpy(last_time_displayed, hmi_data.current_time);
@@ -561,6 +558,11 @@ void hmi_force_full_update(const struct device *display_dev)
     extern struct gps_data current_gps;
 
     printk("hmi_force_full_update: GPS valid = %d\n", current_gps.valid);
+    printk("DEBUG: HMI data before update:\n");
+    printk("  current_time: '%s'\n", hmi_data.current_time);
+    printk("  weather_temp: '%s'\n", hmi_data.weather_temp);
+    printk("  city: '%s'\n", hmi_data.city);
+    printk("  screen_initialized: %d\n", hmi_data.screen_initialized);
 
     // Force complete screen redraw (used for prayer times, dates, etc.)
     hmi_clear_screen(display_dev);
@@ -575,6 +577,7 @@ void hmi_force_full_update(const struct device *display_dev)
         // Clear the tracking variables to prevent any updates
         last_time_displayed[0] = '\0';
         last_temp_displayed[0] = '\0';
+        printk("GPS waiting screen displayed. No placeholders should be visible.\n");
         return;
     }
 
@@ -588,7 +591,7 @@ void hmi_force_full_update(const struct device *display_dev)
     // Clear the time area specifically and redraw it cleanly
     hmi_draw_rectangle(display_dev, CLOCK_X - 2, CLOCK_Y - 1, TIME_DISPLAY_WIDTH + 4, TIME_DISPLAY_HEIGHT + 2, COLOR_BLACK);
     k_usleep(500);  // Ensure clear completes
-    hmi_draw_text(display_dev, hmi_data.current_time, CLOCK_X, CLOCK_Y, COLOR_WHITE);
+    hmi_draw_text_16x16(display_dev, hmi_data.current_time, CLOCK_X, CLOCK_Y, COLOR_WHITE);
 
     // Reset time tracking to current time
     strcpy(last_time_displayed, hmi_data.current_time);

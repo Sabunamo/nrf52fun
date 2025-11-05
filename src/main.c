@@ -16,6 +16,7 @@
 #include "prayerTime.h"
 #include "world_cities.h"
 #include "speaker.h"
+#include "bme280_sensor.h"
 
 // External prayer time function
 extern double convert_Gregor_2_Julian_Day(float d, int m, int y);
@@ -98,6 +99,15 @@ void main(void)
         printk("Speaker initialized successfully\n");
     }
 
+    // Initialize BME280 sensor
+    printk("Initializing BME280 sensor...\n");
+    int bme_ret = bme280_sensor_init();
+    if (bme_ret != 0) {
+        printk("BME280 initialization failed: %d (sensor may not be connected)\n", bme_ret);
+    } else {
+        printk("BME280 sensor initialized successfully\n");
+    }
+
     // Allow GPS to start receiving data
     k_msleep(200);
 
@@ -149,10 +159,33 @@ void main(void)
     uint32_t last_backlight_test = 0;
     const uint32_t backlight_interval = 30 * 1000; // 30 seconds in milliseconds
 
+    // BME280 sensor reading variables
+    uint32_t last_sensor_read = 0;
+    const uint32_t sensor_interval = 5 * 1000; // Read sensor every 5 seconds
+
     // Keep running and update display
     while (1) {
         // Process GPS data using polling
         gps_process_data();
+
+        // Read BME280 sensor periodically
+        uint32_t sensor_time = k_uptime_get_32();
+        if (bme280_sensor_is_ready() && (sensor_time - last_sensor_read >= sensor_interval)) {
+            bme280_data_t sensor_data;
+            int read_ret = bme280_sensor_read(&sensor_data);
+
+            if (read_ret == 0 && sensor_data.valid) {
+                // Update temperature display
+                char temp_display[20];
+                snprintf(temp_display, sizeof(temp_display), "%.1foC", (double)sensor_data.temperature);
+                hmi_set_weather(temp_display);
+
+                printk("BME280: %.1f°C, %.1f%%, %.1fhPa\n",
+                       (double)sensor_data.temperature, (double)sensor_data.humidity, (double)sensor_data.pressure);
+            }
+
+            last_sensor_read = sensor_time;
+        }
 
         // Update HMI with GPS data if available
         extern struct gps_data current_gps;

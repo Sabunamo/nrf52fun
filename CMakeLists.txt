@@ -44,3 +44,11 @@ if(CONFIG_PWM)
 else()
     message(STATUS "Speaker support disabled (no PWM)")
 endif()
+
+# BME280 sensor support - include bme280_sensor.c if sensor is enabled
+if(CONFIG_BME280)
+    target_sources(app PRIVATE src/bme280_sensor.c)
+    message(STATUS "BME280 sensor support enabled")
+else()
+    message(STATUS "BME280 sensor support disabled")
+endif()

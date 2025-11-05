@@ -29,7 +29,7 @@
 
 // Layout dimensions
 #define TOP_BAR_HEIGHT      30
-#define BOTTOM_BAR_HEIGHT   30
+#define BOTTOM_BAR_HEIGHT   35
 #define MIDDLE_HEIGHT       (DISPLAY_HEIGHT - TOP_BAR_HEIGHT - BOTTOM_BAR_HEIGHT)
 
 // Top bar positions
@@ -50,15 +50,15 @@
 
 // Bottom bar positions
 #define WEATHER_X           5
-#define WEATHER_Y           (DISPLAY_HEIGHT - BOTTOM_BAR_HEIGHT + 5)
-#define CLOCK_X             (DISPLAY_WIDTH / 2 - 30)
-#define CLOCK_Y             (DISPLAY_HEIGHT - BOTTOM_BAR_HEIGHT + 5)
-#define TIME_DISPLAY_WIDTH  72    // 8 chars * 9 pixels per char
+#define WEATHER_Y           (DISPLAY_HEIGHT - BOTTOM_BAR_HEIGHT + 10)
+#define CLOCK_X             (DISPLAY_WIDTH / 2 - 65)
+#define CLOCK_Y             (DISPLAY_HEIGHT - BOTTOM_BAR_HEIGHT + 10)
+#define TIME_DISPLAY_WIDTH  140   // 8 chars * 16 pixels per char (16x16 font) + padding
 #define TIME_DISPLAY_HEIGHT 16    // Font height
 #define SETTINGS_X          (DISPLAY_WIDTH - 60)
-#define SETTINGS_Y          (DISPLAY_HEIGHT - BOTTOM_BAR_HEIGHT + 5)
+#define SETTINGS_Y          (DISPLAY_HEIGHT - BOTTOM_BAR_HEIGHT + 10)
 #define BRIGHTNESS_X        (DISPLAY_WIDTH - 30)
-#define BRIGHTNESS_Y        (DISPLAY_HEIGHT - BOTTOM_BAR_HEIGHT + 5)
+#define BRIGHTNESS_Y        (DISPLAY_HEIGHT - BOTTOM_BAR_HEIGHT + 10)
 
 // Prayer names
 typedef enum {
