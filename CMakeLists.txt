@@ -6,7 +6,7 @@
 
 cmake_minimum_required(VERSION 3.20.0)
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
-project(l1_e1_1)
+project(INDOOR)
 
 target_sources(app PRIVATE src/main.c src/font.c src/font_16x16.c src/prayerTime.c src/world_cities.c)
 

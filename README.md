@@ -1,5 +1,5 @@
-# nrf52fun
-Projects on nrf52840DK (islamic prayer times over adafruit 2.8" 1947) using temperature sensor ans gps module 
+# INDOOR
+Islamic Prayer Times Clock on nRF5340-DK with Adafruit 2.8" TFT display (1947), featuring BME280 temperature/humidity/pressure sensor, NEO-7M GPS module, and PmodALS ambient light sensor with automatic brightness control 
 
 ┌─────────────────────────── 320px ────────────────────────────┐
 │📡 GPS: Locked |    Sat | 15-09-2025          | 21-03-1447    │
