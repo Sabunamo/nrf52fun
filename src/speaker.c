@@ -12,7 +12,14 @@
 
 LOG_MODULE_REGISTER(speaker, LOG_LEVEL_INF);
 
-#define PWM_SPEAKER_NODE DT_NODELABEL(speaker)
+// Board-specific speaker node selection
+#if DT_NODE_EXISTS(DT_NODELABEL(speaker_pwm))
+    #define PWM_SPEAKER_NODE DT_NODELABEL(speaker_pwm)
+#elif DT_NODE_EXISTS(DT_NODELABEL(speaker))
+    #define PWM_SPEAKER_NODE DT_NODELABEL(speaker)
+#else
+    #error "No speaker PWM node found (speaker_pwm or speaker)"
+#endif
 
 static const struct pwm_dt_spec speaker_pwm = PWM_DT_SPEC_GET(PWM_SPEAKER_NODE);
 
@@ -64,15 +71,40 @@ void speaker_stop(void)
 
 void speaker_play_athan(void)
 {
-    LOG_INF("Playing Athan melody...");
+    LOG_INF("Playing Athan melody (repeating for 1 minute)...");
 
+    // Calculate melody duration (sum of all note durations + pauses)
+    int melody_duration_ms = 0;
     for (int i = 0; i < athan_notes; i++) {
-        speaker_play_tone(athan_melody[i], athan_durations[i]);
+        melody_duration_ms += athan_durations[i];
+        melody_duration_ms += athan_durations[i] / 5;  // Add pause between notes
+    }
 
-        // Pause between notes (20% longer than note duration)
-        k_msleep(athan_durations[i] / 5);
+    // Repeat for approximately 1 minute (60,000 ms)
+    const int total_duration_ms = 60000;
+    const int pause_between_repeats_ms = 3000;  // 3 second pause
+    int elapsed_ms = 0;
+
+    while (elapsed_ms < total_duration_ms) {
+        // Play the melody once
+        for (int i = 0; i < athan_notes; i++) {
+            speaker_play_tone(athan_melody[i], athan_durations[i]);
+
+            // Pause between notes (20% longer than note duration)
+            k_msleep(athan_durations[i] / 5);
+        }
+
+        elapsed_ms += melody_duration_ms;
+
+        // Add 3 second pause between repetitions (if not finished yet)
+        if (elapsed_ms < total_duration_ms) {
+            speaker_stop();
+            k_msleep(pause_between_repeats_ms);
+            elapsed_ms += pause_between_repeats_ms;
+            LOG_INF("Repeating Athan melody... (%d ms elapsed)", elapsed_ms);
+        }
     }
 
     speaker_stop();
-    LOG_INF("Athan melody complete.");
+    LOG_INF("Athan melody complete (1 minute).");
 }

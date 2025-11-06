@@ -17,6 +17,7 @@
 #include "world_cities.h"
 #include "speaker.h"
 #include "bme280_sensor.h"
+#include "pmodals_sensor.h"
 
 // External prayer time function
 extern double convert_Gregor_2_Julian_Day(float d, int m, int y);
@@ -108,6 +109,15 @@ void main(void)
         printk("BME280 sensor initialized successfully\n");
     }
 
+    // Initialize PmodALS ambient light sensor
+    printk("Initializing PmodALS sensor...\n");
+    int als_ret = pmodals_init();
+    if (als_ret != 0) {
+        printk("PmodALS initialization failed: %d (sensor may not be connected)\n", als_ret);
+    } else {
+        printk("PmodALS sensor initialized successfully\n");
+    }
+
     // Allow GPS to start receiving data
     k_msleep(200);
 
@@ -163,10 +173,31 @@ void main(void)
     uint32_t last_sensor_read = 0;
     const uint32_t sensor_interval = 5 * 1000; // Read sensor every 5 seconds
 
+    // PmodALS sensor reading variables
+    uint32_t last_als_read = 0;
+    const uint32_t als_interval = 2 * 1000; // Read ambient light every 2 seconds
+
     // Keep running and update display
     while (1) {
         // Process GPS data using polling
         gps_process_data();
+
+        // Read PmodALS ambient light sensor periodically for auto-brightness
+        uint32_t als_time = k_uptime_get_32();
+        if (pmodals_is_ready() && (als_time - last_als_read >= als_interval)) {
+            pmodals_data_t als_data;
+            int als_read_ret = pmodals_read(&als_data);
+
+            if (als_read_ret == 0 && als_data.valid) {
+                // Update display brightness automatically
+                hmi_set_brightness(als_data.brightness_pct);
+
+                printk("PmodALS: Raw=%d, Lux=%d, Auto-Brightness=%d%%\n",
+                       als_data.raw_value, als_data.lux, als_data.brightness_pct);
+            }
+
+            last_als_read = als_time;
+        }
 
         // Read BME280 sensor periodically
         uint32_t sensor_time = k_uptime_get_32();
@@ -177,7 +208,7 @@ void main(void)
             if (read_ret == 0 && sensor_data.valid) {
                 // Update temperature display
                 char temp_display[20];
-                snprintf(temp_display, sizeof(temp_display), "%.1foC", (double)sensor_data.temperature);
+                snprintf(temp_display, sizeof(temp_display), "%.1f°C", (double)sensor_data.temperature);
                 hmi_set_weather(temp_display);
 
                 printk("BME280: %.1f°C, %.1f%%, %.1fhPa\n",

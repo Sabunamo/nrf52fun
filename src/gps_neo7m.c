@@ -88,7 +88,8 @@ static void gps_poll_thread(void *p1, void *p2, void *p3)
                         debug_nmea[debug_nmea_index][79] = '\0';
                         debug_nmea_index = (debug_nmea_index + 1) % DEBUG_NMEA_COUNT;
 
-                        printk("NEO-7M NMEA: %s\n", gps_buffer);
+                        // Disable NMEA spam to prevent RTT buffer overflow
+                        // printk("NEO-7M NMEA: %s\n", gps_buffer);
                         process_nmea_sentence(gps_buffer);
                     }
 

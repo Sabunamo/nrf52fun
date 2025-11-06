@@ -584,6 +584,46 @@ const uint16_t font_16x16_n[16] = {
     0b0000000000000000
 };
 
+// Degree symbol (°) for temperature display
+const uint16_t font_16x16_degree[16] = {
+    0b0000000111100000,
+    0b0000001111110000,
+    0b0000011111111000,
+    0b0000111000011100,
+    0b0000110000001100,
+    0b0001110000001110,
+    0b0001110000001110,
+    0b0001110000001110,
+    0b0000110000001100,
+    0b0000111000011100,
+    0b0000011111111000,
+    0b0000001111110000,
+    0b0000000111100000,
+    0b0000000000000000,
+    0b0000000000000000,
+    0b0000000000000000
+};
+
+// Capital C for temperature display (°C)
+const uint16_t font_16x16_C[16] = {
+    0b0000111111110000,
+    0b0001111111111000,
+    0b0011111111111100,
+    0b0111110000111110,
+    0b0111100000011110,
+    0b0111100000000000,
+    0b0111100000000000,
+    0b0111100000000000,
+    0b0111100000000000,
+    0b0111100000000000,
+    0b0111100000000000,
+    0b0111100000011110,
+    0b0111110000111110,
+    0b0011111111111100,
+    0b0001111111111000,
+    0b0000111111110000
+};
+
 // Function to get 16x16 glyph for any character
 const uint16_t* font_get_glyph_16x16(char c) {
     // Digits (0-9)
@@ -606,6 +646,7 @@ const uint16_t* font_get_glyph_16x16(char c) {
     if (c >= 'A' && c <= 'Z') {
         switch(c) {
             case 'A': return font_16x16_A;
+            case 'C': return font_16x16_C;
             case 'D': return font_16x16_D;
             case 'F': return font_16x16_F;
             case 'I': return font_16x16_I;
@@ -635,6 +676,9 @@ const uint16_t* font_get_glyph_16x16(char c) {
     // Special characters
     if (c == ':') {
         return font_16x16_colon;
+    }
+    if (c == '\xB0' || c == '°') {  // Degree symbol (both single byte and UTF-8)
+        return font_16x16_degree;
     }
 
     // Return colon for unknown characters (as placeholder)

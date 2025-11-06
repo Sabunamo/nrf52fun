@@ -1,4 +1,4 @@
-#include "gps.h"
+#include "gps_neo6m.h"
 #include "font.h"
 #include "prayerTime.h"
 #include "world_cities.h"
@@ -764,4 +764,127 @@ int gps_get_local_time(char *local_time_str, size_t max_len)
     printk("[TIME] ============================================\n");
 
     return total_offset;
+}
+
+/**
+ * @brief Calculate day of week (0=Sunday, 1=Monday, ..., 6=Saturday)
+ * Uses Zeller's congruence algorithm
+ */
+static int calculate_day_of_week_neo6m(int day, int month, int year)
+{
+    if (month < 3) {
+        month += 12;
+        year--;
+    }
+    int q = day;
+    int m = month;
+    int k = year % 100;
+    int j = year / 100;
+    int h = (q + (13 * (m + 1)) / 5 + k + k / 4 + j / 4 - 2 * j) % 7;
+    // Convert to 0=Sunday format
+    return (h + 6) % 7;
+}
+
+/**
+ * @brief Find last Sunday of a given month/year
+ * @return Day of month (1-31) of the last Sunday
+ */
+static int find_last_sunday_neo6m(int month, int year)
+{
+    // Days in each month
+    int days_in_month[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+
+    // Check for leap year
+    if (month == 2 && ((year % 4 == 0 && year % 100 != 0) || (year % 400 == 0))) {
+        days_in_month[1] = 29;
+    }
+
+    int last_day = days_in_month[month - 1];
+
+    // Find last Sunday by checking backwards from end of month
+    for (int day = last_day; day >= 1; day--) {
+        if (calculate_day_of_week_neo6m(day, month, year) == 0) {  // 0 = Sunday
+            return day;
+        }
+    }
+    return last_day;  // Fallback (shouldn't happen)
+}
+
+/**
+ * @brief Check if date is in DST period (European rules)
+ * DST starts: Last Sunday of March at 2:00 AM
+ * DST ends: Last Sunday of October at 3:00 AM
+ * @return true if in DST period, false otherwise
+ */
+static bool is_dst_active_neo6m(int day, int month, int year, int hour)
+{
+    // DST not active from November to February
+    if (month < 3 || month > 10) {
+        return false;
+    }
+
+    // Definitely active from April to September
+    if (month > 3 && month < 10) {
+        return true;
+    }
+
+    // March: Check if after last Sunday at 2:00 AM
+    if (month == 3) {
+        int last_sunday = find_last_sunday_neo6m(3, year);
+        if (day > last_sunday) {
+            return true;
+        } else if (day == last_sunday && hour >= 2) {
+            return true;
+        }
+        return false;
+    }
+
+    // October: Check if before last Sunday at 3:00 AM
+    if (month == 10) {
+        int last_sunday = find_last_sunday_neo6m(10, year);
+        if (day < last_sunday) {
+            return true;
+        } else if (day == last_sunday && hour < 3) {
+            return true;
+        }
+        return false;
+    }
+
+    return false;
+}
+
+/**
+ * @brief Get local time with automatic DST adjustment (CET/CEST)
+ * @param local_time Output buffer for local time (must be at least 11 bytes)
+ * @return Timezone offset applied (1 for CET, 2 for CEST, 0 if invalid)
+ */
+int gps_get_local_time(char *local_time)
+{
+    if (!current_gps.time_str[0] || !current_gps.date_valid || !local_time) {
+        return 0;
+    }
+
+    int hours, minutes, seconds;
+    if (sscanf(current_gps.time_str, "%d:%d:%d", &hours, &minutes, &seconds) != 3) {
+        return 0;
+    }
+
+    int day, month, year;
+    if (sscanf(current_gps.date_str, "%d/%d/%d", &day, &month, &year) != 3) {
+        return 0;
+    }
+
+    // Determine timezone offset (CET = UTC+1, CEST = UTC+2)
+    int offset = is_dst_active_neo6m(day, month, year, hours) ? 2 : 1;
+
+    // Apply offset
+    hours += offset;
+
+    // Handle day wraparound
+    if (hours >= 24) {
+        hours -= 24;
+    }
+
+    snprintf(local_time, 11, "%02d:%02d:%02d", hours, minutes, seconds);
+    return offset;
 }

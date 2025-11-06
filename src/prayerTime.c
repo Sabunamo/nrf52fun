@@ -1,6 +1,10 @@
 #include "prayerTime.h"
 #include "font.h"
-#include "gps.h"
+#ifdef USE_NEO6M_GPS
+    #include "gps_neo6m.h"
+#else
+    #include "gps_neo7m.h"
+#endif
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/display.h>
 #include <zephyr/drivers/gpio.h>

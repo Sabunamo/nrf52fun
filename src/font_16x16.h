@@ -21,8 +21,10 @@ extern const uint16_t font_16x16_9[16];
 
 // Special characters
 extern const uint16_t font_16x16_colon[16];
+extern const uint16_t font_16x16_degree[16];  // Degree symbol (°)
 
 // Uppercase letters (needed for prayer names)
+extern const uint16_t font_16x16_C[16];  // Capital C (for °C)
 extern const uint16_t font_16x16_F[16];  // Fajr
 extern const uint16_t font_16x16_S[16];  // Shuruq
 extern const uint16_t font_16x16_D[16];  // Dhuhr

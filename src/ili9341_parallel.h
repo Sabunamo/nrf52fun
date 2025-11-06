@@ -1,6 +1,6 @@
 /*
  * ILI9341 TFT LCD Driver - Parallel 8-bit Interface
- * For MCUFriend 2.4" TFT LCD Shield on nRF5340-DK
+ * For MCUFriend 2.4" TFT LCD Shield on nRF52-DK
  */
 
 #ifndef ILI9341_PARALLEL_H

@@ -44,35 +44,33 @@ static inline void write_data_bus(uint8_t data)
 
 static inline void pulse_wr(void)
 {
-    k_busy_wait(5);  // Setup time - ensure data is stable (increased for nRF5340)
+    k_busy_wait(2);  // Setup time - ensure data is stable
     gpio_pin_set_dt(&lcd_wr, 0);
-    k_busy_wait(10);  // WR low pulse width (increased for nRF5340)
+    k_busy_wait(5);  // WR low pulse width (min ~50ns, using 5us for safety)
     gpio_pin_set_dt(&lcd_wr, 1);
-    k_busy_wait(5);  // Hold time after WR goes high (increased for nRF5340)
+    k_busy_wait(2);  // Hold time after WR goes high
 }
 
 static void write_command(uint8_t cmd)
 {
     gpio_pin_set_dt(&lcd_rs, 0);  // Command mode (must be set before CS)
-    k_busy_wait(2);  // Allow RS to settle
     gpio_pin_set_dt(&lcd_cs, 0);  // CS active low
-    k_busy_wait(2);  // CS setup time (increased for nRF5340)
+    k_busy_wait(1);  // CS setup time
     write_data_bus(cmd);
     pulse_wr();
     gpio_pin_set_dt(&lcd_cs, 1);  // CS inactive high
-    k_busy_wait(2);  // CS hold time (increased for nRF5340)
+    k_busy_wait(1);  // CS hold time
 }
 
 static void write_data(uint8_t data)
 {
     gpio_pin_set_dt(&lcd_rs, 1);  // Data mode (must be set before CS)
-    k_busy_wait(2);  // Allow RS to settle
     gpio_pin_set_dt(&lcd_cs, 0);  // CS active low
-    k_busy_wait(2);  // CS setup time (increased for nRF5340)
+    k_busy_wait(1);  // CS setup time
     write_data_bus(data);
     pulse_wr();
     gpio_pin_set_dt(&lcd_cs, 1);  // CS inactive high
-    k_busy_wait(2);  // CS hold time (increased for nRF5340)
+    k_busy_wait(1);  // CS hold time
 }
 
 static void write_data16(uint16_t data)
@@ -143,7 +141,7 @@ int ili9341_init(void)
     gpio_pin_configure_dt(&lcd_wr, GPIO_OUTPUT_ACTIVE);      // WR high (inactive)
     gpio_pin_configure_dt(&lcd_rd, GPIO_OUTPUT_ACTIVE);      // RD high (inactive)
 
-    LOG_INF("Control pins configured - RST:P0.25 CS:P0.07 RS:P0.06 WR:P0.05 RD:P0.04");
+    LOG_INF("Control pins configured - RST:P0.30 CS:P0.29 RS:P0.28 WR:P0.04 RD:P0.03");
 
     /* Hardware reset */
     LOG_INF("Performing hardware reset...");

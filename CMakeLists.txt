@@ -52,3 +52,7 @@ if(CONFIG_BME280)
 else()
     message(STATUS "BME280 sensor support disabled")
 endif()
+
+# PmodALS ambient light sensor support - always included for auto-brightness
+target_sources(app PRIVATE src/pmodals_sensor.c)
+message(STATUS "PmodALS ambient light sensor support enabled")

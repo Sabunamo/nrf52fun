@@ -264,12 +264,12 @@ static void hmi_draw_temperature(const struct device *display_dev, const char* t
                 current_x += 18; // double spacing for double size
             }
         } else {
-            // Draw any other character (including °C) at small size
+            // Draw any other character (including °C)
             // Check if this is UTF-8 degree symbol sequence (0xC2 0xB0)
             if ((unsigned char)c == 0xC2 && i + 1 < len && (unsigned char)temp_str[i + 1] == 0xB0) {
-                // UTF-8 degree symbol (°) - draw proper degree symbol and skip next byte
-                // Draw degree symbol directly using font_degree pattern
-                for (int row = 0; row < 16; row++) {
+                // UTF-8 degree symbol (°) - draw 8x8 degree symbol at top position
+                // Use the 8x16 font_degree pattern, but only first 8 rows for 8x8 size
+                for (int row = 0; row < 8; row++) {
                     uint8_t pattern = font_degree[row];
                     for (int col = 0; col < 8; col++) {
                         if (pattern & (0x80 >> col)) {
@@ -284,12 +284,12 @@ static void hmi_draw_temperature(const struct device *display_dev, const char* t
                         }
                     }
                 }
-                current_x += 9;
+                current_x += 9; // 8x8 spacing
                 i++; // skip the second byte (0xB0) of UTF-8 sequence
             } else if (c == 'C') {
-                // Draw C at small size
-                hmi_draw_character_scaled(display_dev, c, current_x, y + 8, color, 1);
-                current_x += 9;
+                // Draw C at 16x16 size
+                hmi_draw_character_16x16(display_dev, 'C', current_x, y, color);
+                current_x += 17; // 16x16 spacing
             } else if (c == '-') {
                 // Draw dash for missing temperature
                 hmi_draw_character_scaled(display_dev, c, current_x, y + 8, color, 1);

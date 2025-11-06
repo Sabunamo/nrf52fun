@@ -1,6 +1,6 @@
 /**
- * @file gps.h
- * @brief GPS module interface for NMEA data processing
+ * @file gps_neo6m.h
+ * @brief NEO-6M GPS module interface for NMEA data processing
  *
  * This module handles GPS communication via UART1 and processes NMEA sentences
  * to extract position, time, and date information for the prayer time application.
@@ -11,8 +11,8 @@
  * - P1.02: GPS RX (connect to GPS module TX)
  */
 
-#ifndef GPS_H
-#define GPS_H
+#ifndef GPS_NEO6M_H
+#define GPS_NEO6M_H
 
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
@@ -149,5 +149,15 @@ int gps_calculate_timezone_from_longitude(double longitude);
  * Updates the DST configuration with calculated timezone offset
  */
 void gps_auto_configure_timezone(void);
+
+/**
+ * @brief Get local time with automatic DST adjustment (CET/CEST)
+ * Automatically detects DST based on European rules:
+ * - DST starts: Last Sunday of March at 2:00 AM (UTC+2)
+ * - DST ends: Last Sunday of October at 3:00 AM (UTC+1)
+ * @param local_time Output buffer for local time (must be at least 11 bytes)
+ * @return Timezone offset applied (1 for CET winter, 2 for CEST summer, 0 if invalid)
+ */
+int gps_get_local_time(char *local_time);
 
 #endif
