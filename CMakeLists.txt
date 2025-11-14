@@ -8,7 +8,7 @@ cmake_minimum_required(VERSION 3.20.0)
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(INDOOR)
 
-target_sources(app PRIVATE src/main.c src/font.c src/font_16x16.c src/prayerTime.c src/world_cities.c)
+target_sources(app PRIVATE src/main.c src/font.c src/font_16x16.c src/prayerTime.c src/world_cities.c src/sd_card.c)
 
 # Conditional display driver - parallel for nrf52dk, SPI TFT for nrf5340dk
 if(BOARD MATCHES "nrf5340")

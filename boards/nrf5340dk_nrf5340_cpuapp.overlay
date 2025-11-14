@@ -21,14 +21,26 @@
     };
 };
 
-// SPI4 for TFT Display and PmodALS (shared bus)
+// SPI4 for TFT Display, PmodALS, and SD Card (shared bus)
 &spi4 {
     status = "okay";
     pinctrl-0 = <&spi4_default>;
     pinctrl-1 = <&spi4_sleep>;
     pinctrl-names = "default", "sleep";
     cs-gpios = <&gpio1 12 GPIO_ACTIVE_LOW>,  // P1.12 as TFT CS (device 0)
-               <&gpio1 7 GPIO_ACTIVE_LOW>;   // P1.07 as ALS CS (device 1)
+               <&gpio1 7 GPIO_ACTIVE_LOW>,   // P1.07 as ALS CS (device 1)
+               <&gpio1 6 GPIO_ACTIVE_LOW>;   // P1.06 as SD Card CS (device 2)
+
+    sdhc0: sdhc@2 {
+        compatible = "zephyr,sdhc-spi-slot";
+        reg = <2>;
+        spi-max-frequency = <8000000>;
+        status = "okay";
+        mmc {
+            compatible = "zephyr,sdmmc-disk";
+            status = "okay";
+        };
+    };
 };
 
 /* Pinctrl configurations */
@@ -154,7 +166,7 @@
 //   P0.20 - UART TX  (connect to GPS RX)
 //   P0.22 - UART RX  (connect from GPS TX)
 //
-// TFT Display and PmodALS (Shared SPI4 bus):
+// TFT Display, PmodALS, and SD Card (Shared SPI4 bus):
 //   P1.15 - SCK      (Shared SPI4 CLK)
 //   P1.13 - MOSI     (Shared SPI4 MOSI)
 //   P1.14 - MISO     (Shared SPI4 MISO)
@@ -162,6 +174,7 @@
 //   P1.11 - DC       (ILI9341 Display DC)
 //   P1.10 - RESET    (ILI9341 Display Reset)
 //   P1.07 - ALS CS   (PmodALS chip select, SPI device 1)
+//   P1.06 - SD CS    (SD Card chip select, SPI device 2)
 //
 // BME280 Sensor (I2C2):
 //   P1.02 - I2C SDA  (BME280 data line)

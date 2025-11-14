@@ -18,6 +18,7 @@
 #include "speaker.h"
 #include "bme280_sensor.h"
 #include "pmodals_sensor.h"
+#include "sd_card.h"
 
 // External prayer time function
 extern double convert_Gregor_2_Julian_Day(float d, int m, int y);
@@ -110,12 +111,52 @@ void main(void)
     }
 
     // Initialize PmodALS ambient light sensor
-    printk("Initializing PmodALS sensor...\n");
-    int als_ret = pmodals_init();
-    if (als_ret != 0) {
-        printk("PmodALS initialization failed: %d (sensor may not be connected)\n", als_ret);
+    // TEMPORARILY DISABLED for debugging
+    // printk("Initializing PmodALS sensor...\n");
+    // int als_ret = pmodals_init();
+    // if (als_ret != 0) {
+    //     printk("PmodALS initialization failed: %d (sensor may not be connected)\n", als_ret);
+    // } else {
+    //     printk("PmodALS sensor initialized successfully\n");
+    // }
+
+    // Initialize SD Card
+    printk("Initializing SD Card on SPI4 (CS: P1.06)...\n");
+    printk("Note: This may take 5-10 seconds if no card is present\n");
+    sd_card_set_display_device(display_dev);  // Set display for BMP images
+    int sd_ret = sd_card_init();
+    printk("SD Card init returned: %d\n", sd_ret);
+    if (sd_ret != 0) {
+        printk("SD Card initialization FAILED: error %d\n", sd_ret);
+        printk("Possible reasons:\n");
+        printk("  - No SD card inserted\n");
+        printk("  - Card not formatted (needs FAT/FAT32)\n");
+        printk("  - Bad connection on SPI bus\n");
+        printk("  - CS pin (P1.06) not connected\n");
+        printk("Continuing without SD card support...\n");
     } else {
-        printk("PmodALS sensor initialized successfully\n");
+        printk("SD Card initialized successfully!\n");
+
+        // Get and display SD card size
+        uint32_t block_count = 0, block_size = 0;
+        if (sd_card_get_size(&block_count, &block_size) == 0) {
+            uint64_t total_bytes = (uint64_t)block_count * block_size;
+            uint32_t total_mb = (uint32_t)(total_bytes / (1024 * 1024));
+            printk("SD Card Size: %u MB (%u blocks x %u bytes)\n",
+                   total_mb, block_count, block_size);
+        }
+
+        // Display woof.bmp image from SD card
+        printk("Displaying woof.bmp from SD card...\n");
+        int bmp_ret = sd_card_display_bmp_file("SD:/woof.bmp");
+        if (bmp_ret == 0) {
+            printk("BMP image displayed successfully!\n");
+            printk("Image will be shown for 3 seconds...\n");
+            k_msleep(3000);  // Show image for 3 seconds
+        } else {
+            printk("Failed to display woof.bmp: error %d\n", bmp_ret);
+            printk("Make sure woof.bmp exists in root directory of SD card\n");
+        }
     }
 
     // Allow GPS to start receiving data
@@ -164,6 +205,7 @@ void main(void)
     printk("Setup complete. Starting HMI display loop...\n");
 
     bool prayer_times_calculated = false;
+    bool sd_card_available = (sd_ret == 0);  // Track if SD card is working
 
     // Backlight test variables
     uint32_t last_backlight_test = 0;
@@ -183,21 +225,22 @@ void main(void)
         gps_process_data();
 
         // Read PmodALS ambient light sensor periodically for auto-brightness
-        uint32_t als_time = k_uptime_get_32();
-        if (pmodals_is_ready() && (als_time - last_als_read >= als_interval)) {
-            pmodals_data_t als_data;
-            int als_read_ret = pmodals_read(&als_data);
+        // TEMPORARILY DISABLED for debugging
+        // uint32_t als_time = k_uptime_get_32();
+        // if (pmodals_is_ready() && (als_time - last_als_read >= als_interval)) {
+        //     pmodals_data_t als_data;
+        //     int als_read_ret = pmodals_read(&als_data);
 
-            if (als_read_ret == 0 && als_data.valid) {
-                // Update display brightness automatically
-                hmi_set_brightness(als_data.brightness_pct);
+        //     if (als_read_ret == 0 && als_data.valid) {
+        //         // Update display brightness automatically
+        //         hmi_set_brightness(als_data.brightness_pct);
 
-                printk("PmodALS: Raw=%d, Lux=%d, Auto-Brightness=%d%%\n",
-                       als_data.raw_value, als_data.lux, als_data.brightness_pct);
-            }
+        //         printk("PmodALS: Raw=%d, Lux=%d, Auto-Brightness=%d%%\n",
+        //                als_data.raw_value, als_data.lux, als_data.brightness_pct);
+        //     }
 
-            last_als_read = als_time;
-        }
+        //     last_als_read = als_time;
+        // }
 
         // Read BME280 sensor periodically
         uint32_t sensor_time = k_uptime_get_32();
@@ -364,9 +407,22 @@ void main(void)
                             printk("PRAYER TIME REACHED: %s at %s\n", current_prayers[i].name, current_prayers[i].time);
                             strcpy(last_prayer_triggered, current_prayers[i].time);
 
-                            // Play Athan through speaker
-                            printk("Playing Athan for %s prayer...\n", current_prayers[i].name);
-                            speaker_play_athan();
+                            // Play Athan from SD card if available
+                            if (sd_card_available) {
+                                printk("Playing Athan from SD card (athan.wav) for %s prayer...\n", current_prayers[i].name);
+                                int audio_ret = sd_card_play_wav_file("SD:/athan.wav", 62500);
+                                if (audio_ret != 0) {
+                                    printk("Failed to play athan.wav from SD card: %d\n", audio_ret);
+                                    printk("Falling back to built-in athan tones...\n");
+                                    speaker_play_athan();
+                                } else {
+                                    printk("Athan playback completed successfully\n");
+                                }
+                            } else {
+                                // Fallback to built-in speaker tones if SD card not available
+                                printk("SD card not available, playing built-in Athan tones...\n");
+                                speaker_play_athan();
+                            }
 
                             // Also trigger LED blinking
                             Pray_Athan();
