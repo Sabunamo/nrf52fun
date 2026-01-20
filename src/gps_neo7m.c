@@ -535,6 +535,33 @@ void gps_get_stats(uint32_t *bytes_rx, uint32_t *sentences_parsed)
 }
 
 /**
+ * @brief Print raw NMEA sentences for debugging
+ */
+void gps_print_raw_data(void)
+{
+    printk("\n========== RAW GPS NMEA DATA ==========\n");
+    printk("Total bytes: %u, Total sentences: %u\n", total_bytes_received, total_sentences_parsed);
+    printk("Last %d NMEA sentences received:\n", DEBUG_NMEA_COUNT);
+
+    // Print the last DEBUG_NMEA_COUNT sentences in order
+    for (int i = 0; i < DEBUG_NMEA_COUNT; i++) {
+        int idx = (debug_nmea_index + i) % DEBUG_NMEA_COUNT;
+        if (debug_nmea[idx][0] != '\0') {
+            printk("  [%d] %s\n", i+1, debug_nmea[idx]);
+        }
+    }
+
+    printk("GPS Valid: %s\n", current_gps.valid ? "YES" : "NO");
+    if (current_gps.valid) {
+        printk("Position: %.6f%c, %.6f%c\n",
+               fabs(current_gps.latitude), current_gps.lat_hemisphere,
+               fabs(current_gps.longitude), current_gps.lon_hemisphere);
+        printk("Time: %s UTC, Date: %s\n", current_gps.time_str, current_gps.date_str);
+    }
+    printk("=======================================\n\n");
+}
+
+/**
  * @brief Calculate day of week (0=Sunday, 1=Monday, ..., 6=Saturday)
  * Uses Zeller's congruence algorithm
  */

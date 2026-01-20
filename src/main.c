@@ -508,6 +508,9 @@ void main(void)
             printk("Prayer Times Calculated: %s\n", prayer_times_calculated ? "YES" : "NO");
             printk("Display Working: YES\n");
 
+            // Print raw GPS NMEA data for debugging
+            gps_print_raw_data();
+
             last_backlight_test = current_time;
         }
 

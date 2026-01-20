@@ -121,4 +121,17 @@ void gps_auto_configure_timezone(void);
  */
 void gps_send_test_data(int count);
 
+/**
+ * @brief Print raw NMEA sentences received from GPS
+ * Displays the last 5 NMEA sentences received for debugging
+ */
+void gps_print_raw_data(void);
+
+/**
+ * @brief Get GPS statistics
+ * @param bytes_rx Pointer to store total bytes received (can be NULL)
+ * @param sentences_parsed Pointer to store total sentences parsed (can be NULL)
+ */
+void gps_get_stats(uint32_t *bytes_rx, uint32_t *sentences_parsed);
+
 #endif // GPS_NEO7M_H
