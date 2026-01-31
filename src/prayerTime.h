@@ -43,17 +43,6 @@ double twilligt(double winkel);
 double calc_asrAngle(int factor);
 double calc_altitude(void);
 
-// Function to print current date and time
-void prayer_time_print_datetime(const struct device *display_dev, int16_t x, int16_t y, uint16_t text_color, uint16_t bg_color);
-
-// Function to display Julian Day number
-void prayer_time_print_julian_day(const struct device *display_dev, int16_t x, int16_t y, double julian_day, uint16_t text_color, uint16_t bg_color);
-
-// Helper function to draw a single character (used internally)
-void prayer_time_draw_character(const struct device *display_dev, char c, int16_t x, int16_t y, uint16_t color);
-
-// Function to display Hijri date with day of week
-void prayer_time_print_hijri_date(const struct device *display_dev, int16_t x, int16_t y, hijri_date_t hijri_date, const char* day_name, uint16_t text_color, uint16_t bg_color);
 
 // Function to calculate all prayer times
 prayer_myFloats_t prayerStruct(void);

@@ -166,7 +166,7 @@
 //   P0.20 - UART TX  (connect to GPS RX)
 //   P0.22 - UART RX  (connect from GPS TX)
 //
-// TFT Display, PmodALS, and SD Card (Shared SPI4 bus):
+// TFT Display, PmodALS, SD Card, and Touch Screen (Shared SPI4 bus):
 //   P1.15 - SCK      (Shared SPI4 CLK)
 //   P1.13 - MOSI     (Shared SPI4 MOSI)
 //   P1.14 - MISO     (Shared SPI4 MISO)
@@ -175,10 +175,13 @@
 //   P1.10 - RESET    (ILI9341 Display Reset)
 //   P1.07 - ALS CS   (PmodALS chip select, SPI device 1)
 //   P1.06 - SD CS    (SD Card chip select, SPI device 2)
+//   P1.08 - TOUCH CS (STMPE610 Touch controller CS, SPI device 3)
+//   P1.00 - TOUCH IRQ (Touch interrupt, optional)
 //
-// BME280 Sensor (I2C2):
-//   P1.02 - I2C SDA  (BME280 data line)
-//   P1.03 - I2C SCL  (BME280 clock line)
+// BME280 Sensor and FT6206 Touch (I2C2):
+//   P1.02 - I2C SDA  (BME280 & FT6206 data line)
+//   P1.03 - I2C SCL  (BME280 & FT6206 clock line)
+//   P1.00 - Touch IRQ (FT6206 interrupt)
 //
 // Speaker (PWM0):
 //   P0.12 - PWM OUT  (Speaker/Buzzer signal)

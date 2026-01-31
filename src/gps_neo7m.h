@@ -79,24 +79,6 @@ int gps_init(void);
  */
 void gps_process_data(void);
 
-/**
- * @brief Print current GPS information to console (debug function)
- */
-void gps_print_info(void);
-
-/**
- * @brief Display GPS data on LCD screen
- * @param display_dev Display device pointer
- * @param x X position on screen
- * @param y Y position on screen
- */
-void display_gps_data(const struct device *display_dev, int x, int y);
-
-/**
- * @brief Get current date string for prayer calculations
- * @return Pointer to date string in DD/MM/YYYY format
- */
-const char* gps_get_today_date(void);
 
 /**
  * @brief Get local time with automatic DST adjustment (CET/CEST)
@@ -115,11 +97,6 @@ int gps_get_local_time(char *local_time, size_t max_len);
  */
 void gps_auto_configure_timezone(void);
 
-/**
- * @brief Send test data on UART for loopback testing
- * @param count Test message counter
- */
-void gps_send_test_data(int count);
 
 /**
  * @brief Print raw NMEA sentences received from GPS
