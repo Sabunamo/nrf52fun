@@ -20,7 +20,8 @@
     pinctrl-0 = <&spi1_default>;
     pinctrl-1 = <&spi1_sleep>;
     pinctrl-names = "default", "sleep";
-    cs-gpios = <&gpio1 12 GPIO_ACTIVE_LOW>; // P1.12 as TFT CS
+    cs-gpios = <&gpio1 12 GPIO_ACTIVE_LOW>,  // P1.12 as TFT CS
+               <&gpio1 7 GPIO_ACTIVE_LOW>;   // P1.07 as ALS CS
 };
 
 /* Add pinctrl node for spi1 */
@@ -43,8 +44,8 @@
     spi1_default: spi1_default {
         group1 {
             psels = <NRF_PSEL(SPIM_SCK, 1, 15)>,   // P1.15 SCLK
-                    <NRF_PSEL(SPIM_MOSI, 1, 13)>, // P1.13 MOSI
-                    <NRF_PSEL(SPIM_MISO, 1, 14)>; // P1.14 MISO
+                    <NRF_PSEL(SPIM_MOSI, 1, 13)>,  // P1.13 MOSI
+                    <NRF_PSEL(SPIM_MISO, 1, 14)>;  // P1.14 MISO
          };
     };
 
@@ -56,9 +57,22 @@
             low-power-enable;
         };
     };
+
+    pwm0_default: pwm0_default {
+        group1 {
+            psels = <NRF_PSEL(PWM_OUT0, 0, 12)>;  // P0.12 Speaker PWM
+        };
+    };
+
+    pwm0_sleep: pwm0_sleep {
+        group1 {
+            psels = <NRF_PSEL(PWM_OUT0, 0, 12)>;
+            low-power-enable;
+        };
+    };
 };
 
- / {
+/ {
     aliases {
         gps-uart = &uart1;
     };
@@ -75,6 +89,13 @@
         backlight_gpio: backlight_gpio {
             gpios = <&gpio0 3 GPIO_ACTIVE_LOW>;
             label = "Display Backlight";
+        };
+    };
+
+    pwmleds {
+        compatible = "pwm-leds";
+        speaker: speaker_pwm_led {
+            pwms = <&pwm0 0 PWM_HZ(1000) PWM_POLARITY_NORMAL>;
         };
     };
 
@@ -112,6 +133,14 @@
     pinctrl-names = "default", "sleep";
 };
 
+// PWM0 for Speaker (P0.12)
+&pwm0 {
+    status = "okay";
+    pinctrl-0 = <&pwm0_default>;
+    pinctrl-1 = <&pwm0_sleep>;
+    pinctrl-names = "default", "sleep";
+};
+
 &pinctrl {
     uart1_default: uart1_default {
         group1 {
@@ -135,8 +164,12 @@
 // P1.14 - MISO     -  (D12) - Shared SPI1 MISO
 // P1.12 - TFT CS   -  (D10) - ILI9341 Display CS
 // P1.11 - DC       -  (D09) - ILI9341 Display DC
-// P1.10 - RESET    -  (D08) - ILI9341 Display Reset
+// P1.10 - RESET    -  (D08) - ILI9341 Display Reset (manual in code)
+// P1.07 - ALS CS   -  PmodALS chip select
 // P1.01 - GPS TX   -  UART1 TX (connect to GPS RX)
 // P1.02 - GPS RX   -  UART1 RX (connect to GPS TX)
-// P0.28 - I2C SCL  -  I2C0 SCL (BME280 sensor)
-// P0.29 - I2C SDA  -  I2C0 SDA (BME280 sensor)
+// P0.28 - I2C SCL  -  I2C0 SCL (BME280 & FT6206)
+// P0.29 - I2C SDA  -  I2C0 SDA (BME280 & FT6206)
+// P0.04 - Touch IRQ - FT6206 interrupt (Adafruit 1947 touch)
+// P0.03 - Backlight - Display backlight control
+// P0.12 - Speaker   - PWM speaker output

@@ -10,8 +10,8 @@ project(INDOOR)
 
 target_sources(app PRIVATE src/main.c src/font.c src/font_16x16.c src/prayerTime.c src/world_cities.c src/sd_card.c)
 
-# Conditional display driver - parallel for nrf52dk, SPI TFT for nrf5340dk
-if(BOARD MATCHES "nrf5340")
+# Conditional display driver - SPI TFT for nrf5340dk and nrf52840dk, parallel for nrf52dk
+if(BOARD MATCHES "nrf5340" OR BOARD MATCHES "nrf52840")
     target_sources(app PRIVATE src/ili9341_tft.c)
     message(STATUS "Using ili9341_tft.c (SPI TFT with HMI) for ${BOARD}")
 else()
@@ -53,6 +53,11 @@ else()
     message(STATUS "BME280 sensor support disabled")
 endif()
 
-# PmodALS ambient light sensor support - always included for auto-brightness
-target_sources(app PRIVATE src/pmodals_sensor.c)
-message(STATUS "PmodALS ambient light sensor support enabled")
+# PmodALS ambient light sensor support - only for nRF5340 (uses SPI4)
+if(BOARD MATCHES "nrf5340")
+    target_sources(app PRIVATE src/pmodals_sensor.c)
+    message(STATUS "PmodALS ambient light sensor support enabled")
+else()
+    message(STATUS "PmodALS ambient light sensor disabled (not supported on ${BOARD})")
+endif()
+
