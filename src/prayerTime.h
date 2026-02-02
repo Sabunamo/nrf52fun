@@ -25,10 +25,15 @@ typedef struct {
 // Function to convert Gregorian date to Julian Day
 double convert_Gregor_2_Julian_Day(float d, int m, int y);
 
-// Function to convert Gregorian date to Hijri calendar
+// Function to convert Gregorian date to Hijri calendar (original algorithm)
 // Parameters: D=Day, M=Month, X=Year, JD=Julian Day
 // Returns: Complete Hijri date structure (day, month, year)
 hijri_date_t convert_Gregor_2_Hijri_Date(float D, int M, int X, double JD);
+
+// Function to convert Julian Day to Hijri calendar (Tabular algorithm - more accurate)
+// Parameters: JD=Julian Day
+// Returns: Complete Hijri date structure (day, month, year)
+hijri_date_t convert_JD_to_Hijri_Tabular(double JD);
 
 // Function to calculate day of the week from Julian Day
 // Parameter: JD=Julian Day
