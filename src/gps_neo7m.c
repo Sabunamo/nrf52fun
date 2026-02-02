@@ -184,10 +184,16 @@ static void process_gprmc(char *sentence)
             int day, month, year;
             if (sscanf(current_gps.date_str, "%d/%d/%d", &day, &month, &year) == 3) {
                 double julian_day = convert_Gregor_2_Julian_Day((float)day, month, year);
-                hijri_date_t hijri_date = convert_Gregor_2_Hijri_Date((float)day, month, year, julian_day);
 
+                // Old algorithm (for comparison)
+                hijri_date_t hijri_old = convert_Gregor_2_Hijri_Date((float)day, month, year, julian_day);
+
+                // New Tabular algorithm (more accurate)
+                hijri_date_t hijri_new = convert_JD_to_Hijri_Tabular(julian_day);
+
+                // Use the new tabular result for display
                 snprintf(current_gps.hijri_date_str, sizeof(current_gps.hijri_date_str),
-                        "%d/%d/%d", hijri_date.day, hijri_date.month, hijri_date.year);
+                        "%d/%d/%d", hijri_new.day, hijri_new.month, hijri_new.year);
                 current_gps.hijri_valid = true;
 
                 const char* day_name = day_Of_Weak(julian_day);

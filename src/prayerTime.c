@@ -33,15 +33,18 @@ static double current_JulianDay = 0.0;
 
 // Convert Gregorian date to Julian Day
 double convert_Gregor_2_Julian_Day(float d, int m, int y) {
+    printk("[JD CALC] Input: day=%.1f, month=%d, year=%d\n", d, m, y);
+
     if (m <= 2) {
         m = m + 12;
         y = y - 1;
     }
-    
+
     int A = (int)floor(y / 100.0);
     int B = 2 - A + (int)floor(A / 4.0);
     current_JulianDay = floor(365.25 * (y + 4716)) + floor(30.6001 * (m + 1)) + d + B - 1524.5;
-    
+
+    printk("[JD CALC] Result JD: %.1f\n", current_JulianDay);
     return current_JulianDay;
 }
 
@@ -158,6 +161,100 @@ hijri_date_t convert_Gregor_2_Hijri_Date(float D, int M, int X, double JD) {
     };
     
     return hijri_date;
+}
+
+// ============================================================================
+// NEW: Tabular Islamic Calendar Algorithm (more accurate)
+// Based on the Kuwaiti algorithm / standard arithmetical scheme
+// Reference: https://webspace.science.uu.nl/~gent0113/islam/islam_tabcal.htm
+// ============================================================================
+
+// Hijri calendar epoch: July 16, 622 CE (Julian) = JD 1948439.5
+#define HIJRI_EPOCH 1948439.5
+
+// 30-year cycle: 19 common years (354 days) + 11 leap years (355 days) = 10631 days
+#define DAYS_PER_30_YEAR_CYCLE 10631
+
+// Check if a Hijri year is a leap year (has 355 days instead of 354)
+// Leap years in 30-year cycle: 2, 5, 7, 10, 13, 16, 18, 21, 24, 26, 29
+static bool is_hijri_leap_year_tabular(int year) {
+    int y = ((year - 1) % 30) + 1;  // Position in 30-year cycle (1-30)
+    return (y == 2 || y == 5 || y == 7 || y == 10 || y == 13 ||
+            y == 16 || y == 18 || y == 21 || y == 24 || y == 26 || y == 29);
+}
+
+// Get number of days in a Hijri month (Tabular calendar)
+// Odd months (1,3,5,7,9,11) = 30 days
+// Even months (2,4,6,8,10) = 29 days
+// Month 12 = 29 days (common year) or 30 days (leap year)
+static int hijri_month_days_tabular(int month, int year) {
+    if (month == 12) {
+        return is_hijri_leap_year_tabular(year) ? 30 : 29;
+    }
+    return (month % 2 == 1) ? 30 : 29;
+}
+
+// Convert Julian Day to Hijri date using Tabular Islamic Calendar
+hijri_date_t convert_JD_to_Hijri_Tabular(double JD) {
+    // Days since Hijri epoch
+    long days_since_epoch = (long)floor(JD - HIJRI_EPOCH);
+
+    // Handle dates before the Hijri epoch
+    if (days_since_epoch < 0) {
+        printk("Hijri (Tabular): Invalid (before epoch)\n");
+        return (hijri_date_t){.day = 1, .month = 1, .year = 1};
+    }
+
+    // Calculate 30-year cycles elapsed
+    int cycles = days_since_epoch / DAYS_PER_30_YEAR_CYCLE;
+    int remaining_days = days_since_epoch % DAYS_PER_30_YEAR_CYCLE;
+
+    // Find year within cycle
+    int year_in_cycle = 0;
+    int days_counted = 0;
+
+    for (int y = 1; y <= 30; y++) {
+        int year_days = (y == 2 || y == 5 || y == 7 || y == 10 || y == 13 ||
+                         y == 16 || y == 18 || y == 21 || y == 24 || y == 26 || y == 29) ? 355 : 354;
+        if (days_counted + year_days > remaining_days) {
+            year_in_cycle = y;
+            remaining_days -= days_counted;
+            break;
+        }
+        days_counted += year_days;
+    }
+
+    // Calculate Hijri year (1-based)
+    int hijri_year = cycles * 30 + year_in_cycle;
+
+    // Find month and day from remaining days (0-based day count within year)
+    int day_of_year = remaining_days + 1;  // Convert to 1-based
+    int hijri_month = 1;
+    int hijri_day = day_of_year;
+
+    for (int m = 1; m <= 12; m++) {
+        int month_len = hijri_month_days_tabular(m, hijri_year);
+        if (hijri_day <= month_len) {
+            hijri_month = m;
+            break;
+        }
+        hijri_day -= month_len;
+        hijri_month = m + 1;
+    }
+
+    // Bounds check
+    if (hijri_month > 12) hijri_month = 12;
+    if (hijri_day < 1) hijri_day = 1;
+    if (hijri_day > 30) hijri_day = 30;
+
+    printk("Hijri (Tabular): %d/%d/%d (JD=%.1f, days_since_epoch=%ld)\n",
+           hijri_day, hijri_month, hijri_year, JD, days_since_epoch);
+
+    return (hijri_date_t){
+        .day = hijri_day,
+        .month = hijri_month,
+        .year = hijri_year
+    };
 }
 
 // Calculate day of the week from Julian Day
