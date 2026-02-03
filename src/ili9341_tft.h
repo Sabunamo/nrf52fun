@@ -60,6 +60,24 @@
 #define BRIGHTNESS_X        (DISPLAY_WIDTH - 30)
 #define BRIGHTNESS_Y        (DISPLAY_HEIGHT - BOTTOM_BAR_HEIGHT + 10)
 
+// Info icon position (bottom-right corner)
+#define INFO_ICON_X         (DISPLAY_WIDTH - 28)
+#define INFO_ICON_Y         (DISPLAY_HEIGHT - BOTTOM_BAR_HEIGHT + 5)
+#define INFO_ICON_W         24
+#define INFO_ICON_H         24
+
+// Touch zone for the icon (slightly larger for easier tapping)
+#define INFO_TOUCH_X1       (DISPLAY_WIDTH - 35)
+#define INFO_TOUCH_Y1       (DISPLAY_HEIGHT - BOTTOM_BAR_HEIGHT)
+#define INFO_TOUCH_X2       DISPLAY_WIDTH
+#define INFO_TOUCH_Y2       DISPLAY_HEIGHT
+
+// Screen modes
+typedef enum {
+    SCREEN_HOME = 0,
+    SCREEN_INFO
+} screen_mode_t;
+
 // Prayer names
 typedef enum {
     PRAYER_FAJR = 0,
@@ -134,6 +152,17 @@ void hmi_draw_rectangle(const struct device *display_dev, int x, int y,
 
 // Image display functions
 int hmi_display_bmp_image(const struct device *display_dev, const char* filename);
+
+// Screen mode / info screen functions
+screen_mode_t hmi_get_screen_mode(void);
+void hmi_set_screen_mode(screen_mode_t mode, const struct device *display_dev);
+void hmi_draw_info_icon(const struct device *display_dev);
+void hmi_draw_info_screen(const struct device *display_dev);
+bool hmi_check_info_icon_touch(uint16_t touch_x, uint16_t touch_y);
+void hmi_update_info_data(double lat, double lng, char lat_hem, char lon_hem,
+                          double altitude, bool alt_valid,
+                          float temperature, float pressure, float humidity,
+                          bool sensor_valid);
 
 // ========================================================================
 // Compatible API with ili9341_parallel.h (for unified main.c)

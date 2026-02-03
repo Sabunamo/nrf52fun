@@ -61,3 +61,11 @@ else()
     message(STATUS "PmodALS ambient light sensor disabled (not supported on ${BOARD})")
 endif()
 
+# FT6206 touch screen support - only for nRF5340 (uses I2C0)
+if(BOARD MATCHES "nrf5340")
+    target_sources(app PRIVATE src/ft6206_touch.c)
+    message(STATUS "FT6206 touch screen support enabled (I2C0)")
+else()
+    message(STATUS "FT6206 touch screen disabled (not supported on ${BOARD})")
+endif()
+

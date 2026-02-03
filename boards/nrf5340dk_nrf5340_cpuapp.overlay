@@ -4,15 +4,21 @@
 
 // Disable unused peripherals
 &spi0 { status = "disabled"; };
-&i2c0 { status = "disabled"; };
 &i2c1 { status = "disabled"; };
+&uart0 { status = "disabled"; };  // Disable UART0 - shares instance 0 with I2C0 (using RTT console instead)
 
-// Enable I2C2 for BME280 sensor
-&i2c2 {
+// Enable I2C0 for FT6206 touch + BME280 sensor (shared bus, different addresses)
+&i2c0 {
     status = "okay";
-    pinctrl-0 = <&i2c2_default>;
-    pinctrl-1 = <&i2c2_sleep>;
+    pinctrl-0 = <&i2c0_default>;
+    pinctrl-1 = <&i2c0_sleep>;
     pinctrl-names = "default", "sleep";
+
+    ft6206: ft6206@38 {
+        compatible = "i2c-device";
+        reg = <0x38>;
+        label = "FT6206";
+    };
 
     bme280: bme280@76 {
         compatible = "bosch,bme280";
@@ -20,6 +26,9 @@
         label = "BME280";
     };
 };
+
+// I2C2 disabled - BME280 moved to I2C0
+&i2c2 { status = "disabled"; };
 
 // SPI4 for TFT Display, PmodALS, and SD Card (shared bus)
 &spi4 {
@@ -45,14 +54,15 @@
 
 /* Pinctrl configurations */
 &pinctrl {
-    i2c2_default: i2c2_default {
+    i2c0_default: i2c0_default {
         group1 {
-            psels = <NRF_PSEL(TWIM_SDA, 1, 2)>,    // P1.02 I2C SDA
-                    <NRF_PSEL(TWIM_SCL, 1, 3)>;    // P1.03 I2C SCL
+            psels = <NRF_PSEL(TWIM_SDA, 1, 2)>,     // P1.02 I2C0 SDA (FT6206 + BME280)
+                    <NRF_PSEL(TWIM_SCL, 1, 3)>;     // P1.03 I2C0 SCL (FT6206 + BME280)
+            bias-pull-up;
         };
     };
 
-    i2c2_sleep: i2c2_sleep {
+    i2c0_sleep: i2c0_sleep {
         group1 {
             psels = <NRF_PSEL(TWIM_SDA, 1, 2)>,
                     <NRF_PSEL(TWIM_SCL, 1, 3)>;
@@ -166,7 +176,7 @@
 //   P0.20 - UART TX  (connect to GPS RX)
 //   P0.22 - UART RX  (connect from GPS TX)
 //
-// TFT Display, PmodALS, SD Card, and Touch Screen (Shared SPI4 bus):
+// TFT Display, PmodALS, SD Card (Shared SPI4 bus):
 //   P1.15 - SCK      (Shared SPI4 CLK)
 //   P1.13 - MOSI     (Shared SPI4 MOSI)
 //   P1.14 - MISO     (Shared SPI4 MISO)
@@ -175,13 +185,12 @@
 //   P1.10 - RESET    (ILI9341 Display Reset)
 //   P1.07 - ALS CS   (PmodALS chip select, SPI device 1)
 //   P1.06 - SD CS    (SD Card chip select, SPI device 2)
-//   P1.08 - TOUCH CS (STMPE610 Touch controller CS, SPI device 3)
-//   P1.00 - TOUCH IRQ (Touch interrupt, optional)
 //
-// BME280 Sensor and FT6206 Touch (I2C2):
-//   P1.02 - I2C SDA  (BME280 & FT6206 data line)
-//   P1.03 - I2C SCL  (BME280 & FT6206 clock line)
-//   P1.00 - Touch IRQ (FT6206 interrupt)
+// FT6206 Touch + BME280 Sensor (Shared I2C0 bus):
+//   P1.02 - I2C SDA  (FT6206 + BME280, internal pull-up)
+//   P1.03 - I2C SCL  (FT6206 + BME280, internal pull-up)
+//   FT6206 @ 0x38, Chip ID 0x11
+//   BME280 @ 0x76
 //
 // Speaker (PWM0):
 //   P0.12 - PWM OUT  (Speaker/Buzzer signal)
