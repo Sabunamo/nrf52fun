@@ -19,6 +19,7 @@
 #include "bme280_sensor.h"
 #include "pmodals_sensor.h"
 #include "sd_card.h"
+#include "ft6206_touch.h"
 
 // External prayer time function
 extern double convert_Gregor_2_Julian_Day(float d, int m, int y);
@@ -159,6 +160,15 @@ void main(void)
         }
     }
 
+    // Initialize FT6206 touch screen
+    printk("Initializing FT6206 touch screen...\n");
+    int touch_ret = ft6206_init();
+    if (touch_ret != 0) {
+        printk("FT6206 initialization failed: %d (touch may not be connected)\n", touch_ret);
+    } else {
+        printk("FT6206 touch screen initialized successfully\n");
+    }
+
     // Allow GPS to start receiving data
     k_msleep(200);
 
@@ -219,10 +229,54 @@ void main(void)
     uint32_t last_als_read = 0;
     const uint32_t als_interval = 2 * 1000; // Read ambient light every 2 seconds
 
+    // Touch screen variables
+    uint32_t last_touch_process = 0;
+    const uint32_t touch_debounce = 500; // 500ms debounce between screen toggles
+
     // Keep running and update display
     while (1) {
         // Process GPS data using polling
         gps_process_data();
+
+        // Process touch screen input
+        if (ft6206_is_ready()) {
+            ft6206_read();
+            if (ft6206_is_touched() && ft6206_touch.state == TOUCH_PRESSED) {
+                uint16_t tx, ty;
+                ft6206_get_point(&tx, &ty);
+                uint32_t now_touch = k_uptime_get_32();
+
+                // Debounce: only process if enough time has passed
+                if (now_touch - last_touch_process >= touch_debounce) {
+                    last_touch_process = now_touch;
+
+                    if (hmi_get_screen_mode() == SCREEN_HOME) {
+                        // On home screen: check if info icon was touched
+                        if (hmi_check_info_icon_touch(tx, ty)) {
+                            printk("Touch: Info icon pressed at (%d, %d)\n", tx, ty);
+
+                            // Update info data with latest values before showing
+                            bme280_data_t sensor_snap;
+                            bool sensor_ok = (bme280_sensor_get_data(&sensor_snap) == 0);
+                            hmi_update_info_data(
+                                current_gps.latitude, current_gps.longitude,
+                                current_gps.lat_hemisphere, current_gps.lon_hemisphere,
+                                current_gps.seeHeight, current_gps.seeHeight_valid,
+                                sensor_ok ? sensor_snap.temperature : 0,
+                                sensor_ok ? sensor_snap.pressure : 0,
+                                sensor_ok ? sensor_snap.humidity : 0,
+                                sensor_ok);
+
+                            hmi_set_screen_mode(SCREEN_INFO, display_dev);
+                        }
+                    } else {
+                        // On info screen: any touch goes back to home
+                        printk("Touch: Returning to home screen from (%d, %d)\n", tx, ty);
+                        hmi_set_screen_mode(SCREEN_HOME, display_dev);
+                    }
+                }
+            }
+        }
 
         // Read PmodALS ambient light sensor periodically for auto-brightness
         // TEMPORARILY DISABLED for debugging
@@ -253,6 +307,16 @@ void main(void)
                 char temp_display[20];
                 snprintf(temp_display, sizeof(temp_display), "%.1f°C", (double)sensor_data.temperature);
                 hmi_set_weather(temp_display);
+
+                // Update info screen data with latest sensor + GPS values
+                if (hmi_get_screen_mode() == SCREEN_INFO) {
+                    hmi_update_info_data(
+                        current_gps.latitude, current_gps.longitude,
+                        current_gps.lat_hemisphere, current_gps.lon_hemisphere,
+                        current_gps.seeHeight, current_gps.seeHeight_valid,
+                        sensor_data.temperature, sensor_data.pressure,
+                        sensor_data.humidity, true);
+                }
 
                 printk("BME280: %.1f°C, %.1f%%, %.1fhPa\n",
                        (double)sensor_data.temperature, (double)sensor_data.humidity, (double)sensor_data.pressure);
@@ -507,6 +571,7 @@ void main(void)
             printk("GPS Valid: %s\n", current_gps.valid ? "YES" : "NO");
             printk("Prayer Times Calculated: %s\n", prayer_times_calculated ? "YES" : "NO");
             printk("Display Working: YES\n");
+            printk("FT6206 Touch: %s\n", ft6206_is_ready() ? "READY" : "NOT INITIALIZED");
 
             // Print raw GPS NMEA data for debugging
             gps_print_raw_data();

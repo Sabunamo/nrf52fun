@@ -3,9 +3,28 @@
 #include "font.h"
 #include "font_16x16.h"
 #include <zephyr/drivers/gpio.h>
+#include <stdio.h>
 
 static hmi_display_data_t hmi_data = {0};
+static screen_mode_t current_screen_mode = SCREEN_HOME;
+static uint32_t info_screen_enter_time = 0;
+static uint32_t info_screen_last_refresh = 0;
+#define INFO_SCREEN_TIMEOUT_MS   60000  // 60 seconds
+#define INFO_SCREEN_REFRESH_MS   5000   // Refresh info data every 5 seconds
 
+// Info screen cached data
+static struct {
+    double latitude;
+    double longitude;
+    char   lat_hem;
+    char   lon_hem;
+    double altitude;
+    bool   alt_valid;
+    float  temperature;
+    float  pressure;
+    float  humidity;
+    bool   sensor_valid;
+} info_data = {0};
 
 static void hmi_draw_character(const struct device *display_dev, char c, int x, int y, uint16_t color);
 static void hmi_draw_text(const struct device *display_dev, const char* text, int x, int y, uint16_t color);
@@ -467,11 +486,8 @@ void hmi_draw_bottom_bar(const struct device *display_dev)
     printk("  Drawing time: '%s'\n", hmi_data.current_time);
     hmi_draw_text_16x16(display_dev, hmi_data.current_time, CLOCK_X, CLOCK_Y, COLOR_WHITE);
 
-    hmi_draw_text(display_dev, "SET", SETTINGS_X, SETTINGS_Y, COLOR_LIGHT_GRAY);
-
-    char brightness_str[8];
-    snprintf(brightness_str, sizeof(brightness_str), "%d%%", hmi_data.brightness_level);
-    hmi_draw_text(display_dev, brightness_str, BRIGHTNESS_X, BRIGHTNESS_Y, COLOR_ORANGE);
+    // Draw info icon in bottom-right corner
+    hmi_draw_info_icon(display_dev);
 }
 
 static char last_time_displayed[12] = {0};
@@ -512,6 +528,18 @@ void hmi_update_display(const struct device *display_dev)
 
     // If GPS not valid, only show waiting message (don't update anything else)
     if (!current_gps.valid) {
+        return;
+    }
+
+    // If we are on the info screen, check timeout and refresh live data
+    if (current_screen_mode == SCREEN_INFO) {
+        if ((k_uptime_get_32() - info_screen_enter_time) >= INFO_SCREEN_TIMEOUT_MS) {
+            printk("Info screen timeout (60s) - returning to home\n");
+            hmi_set_screen_mode(SCREEN_HOME, display_dev);
+        } else {
+            // Redraw info screen to show latest sensor/GPS data
+            hmi_draw_info_screen(display_dev);
+        }
         return;
     }
 
@@ -664,6 +692,183 @@ void hmi_set_brightness(uint8_t level)
     if (level <= 100) {
         hmi_data.brightness_level = level;
     }
+}
+
+// ========================================================================
+// Info icon and info screen
+// ========================================================================
+
+// Draw a single pixel helper
+static void hmi_draw_pixel(const struct device *display_dev, int x, int y, uint16_t color)
+{
+    if (x < 0 || x >= DISPLAY_WIDTH || y < 0 || y >= DISPLAY_HEIGHT) return;
+    struct display_buffer_descriptor desc = {
+        .width = 1, .height = 1, .pitch = 1,
+        .buf_size = sizeof(color),
+    };
+    display_write(display_dev, x, y, &desc, &color);
+}
+
+// Midpoint circle algorithm (integer only, no floats)
+static void hmi_draw_circle(const struct device *display_dev, int cx, int cy, int r, uint16_t color)
+{
+    int x = r, y = 0, d = 1 - r;
+    while (x >= y) {
+        hmi_draw_pixel(display_dev, cx + x, cy + y, color);
+        hmi_draw_pixel(display_dev, cx - x, cy + y, color);
+        hmi_draw_pixel(display_dev, cx + x, cy - y, color);
+        hmi_draw_pixel(display_dev, cx - x, cy - y, color);
+        hmi_draw_pixel(display_dev, cx + y, cy + x, color);
+        hmi_draw_pixel(display_dev, cx - y, cy + x, color);
+        hmi_draw_pixel(display_dev, cx + y, cy - x, color);
+        hmi_draw_pixel(display_dev, cx - y, cy - x, color);
+        y++;
+        if (d <= 0) {
+            d += 2 * y + 1;
+        } else {
+            x--;
+            d += 2 * (y - x) + 1;
+        }
+    }
+}
+
+void hmi_draw_info_icon(const struct device *display_dev)
+{
+    int cx = INFO_ICON_X + INFO_ICON_W / 2;
+    int cy = INFO_ICON_Y + INFO_ICON_H / 2;
+    int r  = INFO_ICON_W / 2;
+
+    // Draw circle outline using midpoint algorithm
+    hmi_draw_circle(display_dev, cx, cy, r, COLOR_CYAN);
+
+    // Draw "i" inside: dot (2x2) at top, vertical bar below
+    // Dot
+    hmi_draw_pixel(display_dev, cx, cy - 5, COLOR_CYAN);
+    hmi_draw_pixel(display_dev, cx + 1, cy - 5, COLOR_CYAN);
+    hmi_draw_pixel(display_dev, cx, cy - 4, COLOR_CYAN);
+    hmi_draw_pixel(display_dev, cx + 1, cy - 4, COLOR_CYAN);
+
+    // Vertical bar (2 wide, from cy-2 to cy+5)
+    for (int dy = -2; dy <= 5; dy++) {
+        hmi_draw_pixel(display_dev, cx, cy + dy, COLOR_CYAN);
+        hmi_draw_pixel(display_dev, cx + 1, cy + dy, COLOR_CYAN);
+    }
+}
+
+bool hmi_check_info_icon_touch(uint16_t touch_x, uint16_t touch_y)
+{
+    return (touch_x >= INFO_TOUCH_X1 && touch_x <= INFO_TOUCH_X2 &&
+            touch_y >= INFO_TOUCH_Y1 && touch_y <= INFO_TOUCH_Y2);
+}
+
+screen_mode_t hmi_get_screen_mode(void)
+{
+    return current_screen_mode;
+}
+
+void hmi_set_screen_mode(screen_mode_t mode, const struct device *display_dev)
+{
+    if (mode == current_screen_mode) {
+        return;
+    }
+
+    current_screen_mode = mode;
+
+    if (mode == SCREEN_HOME) {
+        // Redraw home screen
+        last_time_displayed[0] = '\0';
+        last_temp_displayed[0] = '\0';
+        hmi_force_full_update(display_dev);
+    } else if (mode == SCREEN_INFO) {
+        info_screen_enter_time = k_uptime_get_32();
+        hmi_draw_info_screen(display_dev);
+    }
+}
+
+void hmi_update_info_data(double lat, double lng, char lat_hem, char lon_hem,
+                          double altitude, bool alt_valid,
+                          float temperature, float pressure, float humidity,
+                          bool sensor_valid)
+{
+    info_data.latitude     = lat;
+    info_data.longitude    = lng;
+    info_data.lat_hem      = lat_hem;
+    info_data.lon_hem      = lon_hem;
+    info_data.altitude     = altitude;
+    info_data.alt_valid    = alt_valid;
+    info_data.temperature  = temperature;
+    info_data.pressure     = pressure;
+    info_data.humidity     = humidity;
+    info_data.sensor_valid = sensor_valid;
+}
+
+void hmi_draw_info_screen(const struct device *display_dev)
+{
+    hmi_clear_screen(display_dev);
+
+    // --- Title bar ---
+    hmi_draw_rectangle(display_dev, 0, 0, DISPLAY_WIDTH, TOP_BAR_HEIGHT, COLOR_DARK_GRAY);
+    hmi_draw_text(display_dev, "Device Info", 10, 7, COLOR_WHITE);
+
+    int y = TOP_BAR_HEIGHT + 10;
+    char buf[40];
+
+    // --- GPS Section ---
+    hmi_draw_text(display_dev, "GPS Coordinates", 10, y, COLOR_YELLOW);
+    y += 20;
+
+    // Latitude
+    snprintf(buf, sizeof(buf), "Lat:  %.4f %c",
+             info_data.latitude > 0 ? info_data.latitude : -info_data.latitude,
+             info_data.lat_hem ? info_data.lat_hem : '-');
+    hmi_draw_text(display_dev, buf, 20, y, COLOR_WHITE);
+    y += 18;
+
+    // Longitude
+    snprintf(buf, sizeof(buf), "Lng:  %.4f %c",
+             info_data.longitude > 0 ? info_data.longitude : -info_data.longitude,
+             info_data.lon_hem ? info_data.lon_hem : '-');
+    hmi_draw_text(display_dev, buf, 20, y, COLOR_WHITE);
+    y += 18;
+
+    // Altitude
+    if (info_data.alt_valid) {
+        snprintf(buf, sizeof(buf), "Alt:  %.1f m", info_data.altitude);
+    } else {
+        snprintf(buf, sizeof(buf), "Alt:  --.- m");
+    }
+    hmi_draw_text(display_dev, buf, 20, y, COLOR_WHITE);
+    y += 22;
+
+    // --- Separator line ---
+    hmi_draw_rectangle(display_dev, 10, y, DISPLAY_WIDTH - 20, 1, COLOR_GRAY);
+    y += 8;
+
+    // --- Environment Section ---
+    hmi_draw_text(display_dev, "Environment", 10, y, COLOR_YELLOW);
+    y += 20;
+
+    if (info_data.sensor_valid) {
+        snprintf(buf, sizeof(buf), "Temp:     %.1f oC", (double)info_data.temperature);
+        hmi_draw_text(display_dev, buf, 20, y, COLOR_WHITE);
+        y += 18;
+
+        snprintf(buf, sizeof(buf), "Pressure: %.1f hPa", (double)info_data.pressure);
+        hmi_draw_text(display_dev, buf, 20, y, COLOR_WHITE);
+        y += 18;
+
+        snprintf(buf, sizeof(buf), "Humidity: %.1f %%", (double)info_data.humidity);
+        hmi_draw_text(display_dev, buf, 20, y, COLOR_WHITE);
+    } else {
+        hmi_draw_text(display_dev, "Sensor not available", 20, y, COLOR_GRAY);
+    }
+
+    // --- Bottom bar with Home icon ---
+    int bottom_y = DISPLAY_HEIGHT - BOTTOM_BAR_HEIGHT;
+    hmi_draw_rectangle(display_dev, 0, bottom_y, DISPLAY_WIDTH, BOTTOM_BAR_HEIGHT, COLOR_DARK_GRAY);
+
+    // Draw home icon in same bottom-right position as info icon
+    hmi_draw_text(display_dev, "Home", INFO_ICON_X - 20, WEATHER_Y, COLOR_CYAN);
 }
 
 // ========================================================================
