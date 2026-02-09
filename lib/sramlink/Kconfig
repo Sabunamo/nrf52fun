@@ -1,0 +1,76 @@
+#
+# SRAMLink Library Configuration
+#
+
+menuconfig SRAMLINK
+    bool "SRAMLink Protocol Support"
+    default n
+    depends on HAS_HW_NRF_RADIO_IEEE802154 || SOC_NRF5340_CPUAPP
+    help
+      Enable SRAMLink wireless protocol support.
+      Uses nRF 802.15.4 radio driver (direct or serialized).
+
+if SRAMLINK
+
+config SRAMLINK_USE_SERIALIZED_HOST
+    bool "Use serialized 802.15.4 driver (for nRF5340 app core)"
+    default y if SOC_NRF5340_CPUAPP
+    select NRF_802154_SER_HOST if SOC_NRF5340_CPUAPP
+    help
+      Use the serialized 802.15.4 driver for nRF5340 app core.
+      The network core must run ipc_radio with 802.15.4 enabled.
+
+config SRAMLINK_USE_DIRECT_DRIVER
+    bool "Use direct 802.15.4 driver"
+    default y if HAS_HW_NRF_RADIO_IEEE802154
+    default n
+    select NRF_802154_RADIO_DRIVER if HAS_HW_NRF_RADIO_IEEE802154
+    help
+      Use the direct 802.15.4 radio driver (nRF52840, nRF52833).
+
+config SRAMLINK_LOG_LEVEL
+    int "SRAMLink log level"
+    default 3
+    range 0 4
+    help
+      Log level for SRAMLink module (0=off, 1=err, 2=warn, 3=info, 4=dbg)
+
+config SRAMLINK_RADIO_CHANNEL
+    int "Default radio channel"
+    default 15
+    range 11 26
+    help
+      Default 802.15.4 radio channel (11-26).
+
+config SRAMLINK_TX_POWER
+    int "Default TX power (dBm)"
+    default 4
+    range -17 8
+    help
+      Default radio transmit power in dBm.
+
+config SRAMLINK_MAX_PAIRING_RECORDS
+    int "Maximum pairing records"
+    default 16
+    help
+      Maximum number of paired devices to store.
+
+config SRAMLINK_NVS_NAMESPACE
+    int "NVS namespace ID"
+    default 21248
+    help
+      NVS namespace for SRAMLink storage (default: 0x5300 = 'SL').
+
+config SRAMLINK_RX_DUTY_CYCLE
+    bool "Enable RX duty cycling"
+    default y
+    help
+      Enable RX duty cycling (5ms on / 45ms off) to save power.
+
+config SRAMLINK_CONTINUOUS_RX
+    bool "Enable continuous RX mode"
+    default n
+    help
+      Keep receiver on continuously (higher power, lower latency).
+
+endif # SRAMLINK

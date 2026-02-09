@@ -19,7 +19,20 @@
 #include "bme280_sensor.h"
 #include "pmodals_sensor.h"
 #include "sd_card.h"
+#ifdef CONFIG_FT6206_TOUCH
 #include "ft6206_touch.h"
+#endif
+#ifdef CONFIG_SRAMLINK
+#include "sramlink/sramlink_app.h"
+#endif
+
+/* LED for SRAMLink pairing confirmation */
+#ifdef CONFIG_SRAMLINK
+#define PAIRING_LED_NODE DT_ALIAS(led0)
+#if DT_NODE_EXISTS(PAIRING_LED_NODE)
+static const struct gpio_dt_spec pairing_led = GPIO_DT_SPEC_GET(PAIRING_LED_NODE, gpios);
+#endif
+#endif /* CONFIG_SRAMLINK */
 
 // External prayer time function
 extern double convert_Gregor_2_Julian_Day(float d, int m, int y);
@@ -123,10 +136,13 @@ void main(void)
 
     // Initialize SD Card
     printk("Initializing SD Card on SPI4 (CS: P1.06)...\n");
+    k_msleep(5);
     printk("Note: This may take 5-10 seconds if no card is present\n");
+    k_msleep(5);
     sd_card_set_display_device(display_dev);  // Set display for BMP images
     int sd_ret = sd_card_init();
-    printk("SD Card init returned: %d\n", sd_ret);
+    k_msleep(5);
+    printk(">>> SD Card init returned: %d <<<\n", sd_ret);
     if (sd_ret != 0) {
         printk("SD Card initialization FAILED: error %d\n", sd_ret);
         printk("Possible reasons:\n");
@@ -160,14 +176,49 @@ void main(void)
         }
     }
 
+#ifdef CONFIG_FT6206_TOUCH
     // Initialize FT6206 touch screen
-    printk("Initializing FT6206 touch screen...\n");
+    printk(">>> FT6206 INIT START <<<\n");
+    k_msleep(5);
     int touch_ret = ft6206_init();
     if (touch_ret != 0) {
         printk("FT6206 initialization failed: %d (touch may not be connected)\n", touch_ret);
     } else {
         printk("FT6206 touch screen initialized successfully\n");
     }
+#endif
+
+#ifdef CONFIG_SRAMLINK
+    // Initialize SRAMLink protocol
+    printk(">>> SRAMLINK INIT START <<<\n");
+    k_msleep(10);
+    sramlink_app_config_t sl_config = {
+        .radio_channel = CONFIG_SRAMLINK_RADIO_CHANNEL,
+        .tx_power_dbm = CONFIG_SRAMLINK_TX_POWER,
+        .enable_rx = true,
+        .continuous_rx = true,
+        .device_type = 0,
+        .button_cb = NULL,
+        .status_cb = NULL,
+    };
+    int sl_ret = sramlink_app_init(&sl_config);
+    if (sl_ret != 0) {
+        printk("SRAMLink initialization failed: %d\n", sl_ret);
+    } else {
+        sramlink_app_start();
+        printk("SRAMLink started on channel %d, device_id=0x%08X\n",
+               sramlink_app_get_channel(), sramlink_app_get_device_id());
+    }
+
+#if DT_NODE_EXISTS(PAIRING_LED_NODE)
+    /* Configure LED for pairing feedback */
+    if (gpio_is_ready_dt(&pairing_led)) {
+        gpio_pin_configure_dt(&pairing_led, GPIO_OUTPUT_INACTIVE);
+    }
+#endif
+
+    /* Shared key used — devices communicate immediately */
+#endif
 
     // Allow GPS to start receiving data
     k_msleep(200);
@@ -229,15 +280,48 @@ void main(void)
     uint32_t last_als_read = 0;
     const uint32_t als_interval = 2 * 1000; // Read ambient light every 2 seconds
 
+#ifdef CONFIG_FT6206_TOUCH
     // Touch screen variables
     uint32_t last_touch_process = 0;
     const uint32_t touch_debounce = 500; // 500ms debounce between screen toggles
+#endif
 
     // Keep running and update display
     while (1) {
         // Process GPS data using polling
         gps_process_data();
 
+#ifdef CONFIG_SRAMLINK
+        // Process SRAMLink messages
+        sramlink_app_process();
+
+        // Check if pairing just completed — blink LED 3x
+        if (sramlink_app_pairing_just_completed()) {
+            printk(">>> PAIRING SUCCESS — blinking LED <<<\n");
+#if DT_NODE_EXISTS(PAIRING_LED_NODE)
+            for (int i = 0; i < 3; i++) {
+                gpio_pin_set_dt(&pairing_led, 1);
+                k_msleep(200);
+                gpio_pin_set_dt(&pairing_led, 0);
+                k_msleep(200);
+            }
+#endif
+        }
+
+        // Send periodic test message for pairing discovery
+        static uint32_t last_sramlink_tx = 0;
+        uint32_t sl_now = k_uptime_get_32();
+        if (sl_now - last_sramlink_tx >= 5000) {  // Every 5 seconds
+            last_sramlink_tx = sl_now;
+            // Send a status report to trigger implicit pairing on receivers
+            int tx_ret = sramlink_app_send_status_report(1, 2, 3, 3300, 0);
+            printk("SRAMLink TX status_report: %s (paired=%d)\n",
+                   tx_ret == 0 ? "OK" : "FAIL",
+                   sramlink_app_get_paired_count());
+        }
+#endif
+
+#ifdef CONFIG_FT6206_TOUCH
         // Process touch screen input
         if (ft6206_is_ready()) {
             ft6206_read();
@@ -277,6 +361,7 @@ void main(void)
                 }
             }
         }
+#endif
 
         // Read PmodALS ambient light sensor periodically for auto-brightness
         // TEMPORARILY DISABLED for debugging
@@ -571,7 +656,13 @@ void main(void)
             printk("GPS Valid: %s\n", current_gps.valid ? "YES" : "NO");
             printk("Prayer Times Calculated: %s\n", prayer_times_calculated ? "YES" : "NO");
             printk("Display Working: YES\n");
+#ifdef CONFIG_FT6206_TOUCH
             printk("FT6206 Touch: %s\n", ft6206_is_ready() ? "READY" : "NOT INITIALIZED");
+#endif
+#ifdef CONFIG_SRAMLINK
+            printk("SRAMLink: paired=%d, device_id=0x%08X\n",
+                   sramlink_app_get_paired_count(), sramlink_app_get_device_id());
+#endif
 
             // Print raw GPS NMEA data for debugging
             gps_print_raw_data();
