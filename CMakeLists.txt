@@ -8,6 +8,9 @@ cmake_minimum_required(VERSION 3.20.0)
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(INDOOR)
 
+# Add SRAMLink library
+add_subdirectory(lib/sramlink)
+
 target_sources(app PRIVATE src/main.c src/font.c src/font_16x16.c src/prayerTime.c src/world_cities.c src/sd_card.c)
 
 # Conditional display driver - SPI TFT for nrf5340dk and nrf52840dk, parallel for nrf52dk
@@ -64,8 +67,23 @@ endif()
 # FT6206 touch screen support - only for nRF5340 (uses I2C0)
 if(BOARD MATCHES "nrf5340")
     target_sources(app PRIVATE src/ft6206_touch.c)
+    target_compile_definitions(app PRIVATE CONFIG_FT6206_TOUCH)
     message(STATUS "FT6206 touch screen support enabled (I2C0)")
 else()
     message(STATUS "FT6206 touch screen disabled (not supported on ${BOARD})")
+endif()
+
+# SRAMLink protocol support
+if(CONFIG_SRAMLINK)
+    target_sources(app PRIVATE src/sramlink/sramlink_app.c)
+    target_include_directories(app PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/lib/sramlink
+        ${CMAKE_CURRENT_SOURCE_DIR}/lib/sramlink/core
+        ${CMAKE_CURRENT_SOURCE_DIR}/lib/sramlink/drivers
+        ${CMAKE_CURRENT_SOURCE_DIR}/lib/sramlink/messages
+        ${CMAKE_CURRENT_SOURCE_DIR}/lib/sramlink/util
+    )
+    target_link_libraries(app PRIVATE sramlink)
+    message(STATUS "SRAMLink protocol support enabled")
 endif()
 

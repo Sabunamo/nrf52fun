@@ -1,0 +1,9 @@
+#
+# INDOOR Project Kconfig
+#
+
+# Source Zephyr Kconfig
+source "Kconfig.zephyr"
+
+# Source SRAMLink library Kconfig
+rsource "lib/sramlink/Kconfig"
