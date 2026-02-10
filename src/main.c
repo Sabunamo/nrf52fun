@@ -38,6 +38,7 @@ static const struct gpio_dt_spec pairing_led = GPIO_DT_SPEC_GET(PAIRING_LED_NODE
 extern double convert_Gregor_2_Julian_Day(float d, int m, int y);
 
 #define RESET_PIN     10   // P1.10 (RST pin)
+#define RELAY_PIN     7    // P0.07 (Relay signal via BC547)
 
 // Variables for prayer calculations
 double Lng = 0.0, Lat = 0.0, D = 0.0;
@@ -57,6 +58,26 @@ void decimal_to_time_string(double decimal_hours, char* time_str, size_t max_len
 void main(void)
 {
     printk("Starting display text test...\n");
+
+    // Configure relay on P0.26
+    const struct device *gpio0_dev = DEVICE_DT_GET(DT_NODELABEL(gpio0));
+    if (!device_is_ready(gpio0_dev)) {
+        printk("GPIO0 device not ready\n");
+        return;
+    }
+    gpio_pin_configure(gpio0_dev, RELAY_PIN, GPIO_OUTPUT_INACTIVE);
+    bool relay_on = false;
+
+    // Configure Button 1 (SW0) for relay toggle
+    static const struct gpio_dt_spec relay_button = GPIO_DT_SPEC_GET(DT_ALIAS(sw0), gpios);
+    if (!gpio_is_ready_dt(&relay_button)) {
+        printk("Button GPIO not ready\n");
+    } else {
+        gpio_pin_configure_dt(&relay_button, GPIO_INPUT);
+    }
+    bool relay_btn_last = false;
+
+    printk("Relay initialized on P0.26 (toggle with Button 1)\n");
 
     // Configure and reset the display first
     const struct device *reset_dev = DEVICE_DT_GET(DT_NODELABEL(gpio1));
@@ -556,6 +577,17 @@ void main(void)
                             printk("PRAYER TIME REACHED: %s at %s\n", current_prayers[i].name, current_prayers[i].time);
                             strcpy(last_prayer_triggered, current_prayers[i].time);
 
+                            // Relay ON at Maghrib, OFF at Isha
+                            if (i == 4) { // Maghrib
+                                gpio_pin_set(gpio0_dev, RELAY_PIN, 1);
+                                relay_on = true;
+                                printk("Relay ON for Maghrib\n");
+                            } else if (i == 5) { // Isha
+                                gpio_pin_set(gpio0_dev, RELAY_PIN, 0);
+                                relay_on = false;
+                                printk("Relay OFF at Isha\n");
+                            }
+
                             // Play Athan from SD card if available
                             if (sd_card_available) {
                                 printk("Playing Athan from SD card (athan.wav) for %s prayer...\n", current_prayers[i].name);
@@ -575,6 +607,7 @@ void main(void)
 
                             // Also trigger LED blinking
                             Pray_Athan();
+
                         }
                         break;
                     }
@@ -669,6 +702,15 @@ void main(void)
 
             last_backlight_test = current_time;
         }
+
+        // Check Button 1 for relay toggle
+        bool relay_btn_now = gpio_pin_get_dt(&relay_button);
+        if (relay_btn_now && !relay_btn_last) {
+            relay_on = !relay_on;
+            gpio_pin_set(gpio0_dev, RELAY_PIN, (int)relay_on);
+            printk("Relay %s\n", relay_on ? "ON" : "OFF");
+        }
+        relay_btn_last = relay_btn_now;
 
         // Update display with selective updates
         hmi_update_display(display_dev);
