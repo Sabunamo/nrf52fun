@@ -14,7 +14,7 @@
 LOG_MODULE_REGISTER(sd_card, LOG_LEVEL_DBG);
 
 #define PWM_SPEAKER_NODE DT_NODELABEL(pwm0)
-#define BUFFER_SIZE 2048
+#define BUFFER_SIZE 4096
 
 /* RGB565 color conversion */
 #define RGB565(r, g, b) ((((r) & 0xF8) << 8) | (((g) & 0xFC) << 3) | (((b) & 0xF8) >> 3))
@@ -379,99 +379,58 @@ int sd_card_play_wav_file(const char *filename, uint32_t pwm_freq_hz)
 	LOG_INF("Starting audio playback...");
 	LOG_INF("NOTE: PWM audio output is low power. Use an amplifier for better volume.");
 
-	/* For better audio quality, we need to downsample or use lower sample rates */
-	/* Recommended: 8kHz or 11kHz mono, 8-bit or 16-bit PCM */
-
-	/* Calculate timing - use k_msleep for more stable timing */
+	/* Use high PWM carrier frequency for clean audio output */
+	uint32_t pwm_period_ns = 16000;  /* 62.5kHz = 16000ns period */
+	uint32_t bytes_per_sample = (bits_per_sample / 8) * num_channels;
 	uint32_t sample_period_us = 1000000 / sample_rate;
 
-	/* Use PWM frequency matching sample rate - original approach */
-	uint32_t pwm_freq_to_use = sample_rate;  /* Match sample rate */
-	uint32_t pwm_period_ns = 1000000000 / pwm_freq_to_use;
-	uint32_t bytes_per_sample = (bits_per_sample / 8) * num_channels;
+	LOG_INF("PWM period: %u ns (62.5kHz), Sample rate: %u Hz", pwm_period_ns, sample_rate);
+	LOG_INF("Sample period: %u us", sample_period_us);
 
-	LOG_INF("Using PWM frequency: %u Hz", pwm_freq_to_use);
-	LOG_INF("Sample rate: %u Hz, PWM period: %u ns", sample_rate, pwm_period_ns);
-
-	/* Audio playback buffer - larger buffer to reduce SD card read frequency */
-	#define BUFFER_SIZE 2048
+	/* Audio playback buffer */
 	uint8_t buffer[BUFFER_SIZE];
 	uint32_t total_samples = data_size / bytes_per_sample;
 	uint32_t samples_played = 0;
 	uint32_t last_progress = 0;
 
-	LOG_INF("Playing %u samples at %u Hz", total_samples, sample_rate);
-
-	/* Play complete audio file - no modifications, no skipping */
-	LOG_INF("Will play complete audio: %u samples (%.1f seconds)",
-	        total_samples, (float)total_samples / sample_rate);
-
-	int64_t next_sample_time = k_uptime_get() * 1000;  /* Convert to us */
+	LOG_INF("Playing %u samples (%u seconds)", total_samples, total_samples / sample_rate);
 
 	while (samples_played < total_samples) {
-		/* Read audio data */
+		/* Read a chunk from SD card */
 		res = f_read(&file, buffer, BUFFER_SIZE, &bytes_read);
 		if (res != FR_OK || bytes_read == 0) {
 			break;
 		}
 
-		/* Play samples */
+		/* Play all samples in this chunk with precise timing */
 		for (uint32_t i = 0; i < bytes_read; i += bytes_per_sample) {
-			if (bits_per_sample == 16) {
-				/* 16-bit signed (-32768 to 32767) */
-				int16_t signed_sample = *(int16_t*)&buffer[i];
+			uint32_t pwm_duty;
 
-				/* Convert signed 16-bit to unsigned 16-bit */
-				/* -32768 maps to 0, 0 maps to 32768, 32767 maps to 65535 */
-				uint32_t unsigned_sample = (uint32_t)((int32_t)signed_sample + 32768);
-
-				/* Convert to PWM duty cycle */
-				/* Simple direct mapping: duty = (sample / 65536) * period */
-				uint32_t pwm_duty = (unsigned_sample * pwm_period_ns) >> 16;
-
-				/* Set PWM - duty cycle should be 0 to pwm_period_ns */
-				pwm_set(pwm_dev, 0, pwm_period_ns, pwm_duty, 0);
-
-			} else if (bits_per_sample == 8) {
-				/* 8-bit unsigned (0-255, center at 128) */
-				uint8_t sample_8bit = buffer[i];
-
-				/* Convert to PWM duty cycle */
-				uint32_t pwm_duty = (sample_8bit * pwm_period_ns) >> 8;
-
-				/* Set PWM */
-				pwm_set(pwm_dev, 0, pwm_period_ns, pwm_duty, 0);
+			if (bits_per_sample == 8) {
+				/* 8-bit unsigned (0-255) -> PWM duty */
+				pwm_duty = ((uint32_t)buffer[i] * pwm_period_ns) >> 8;
+			} else if (bits_per_sample == 16) {
+				/* 16-bit signed -> unsigned -> PWM duty */
+				int16_t s16 = *(int16_t *)&buffer[i];
+				uint32_t u16 = (uint32_t)((int32_t)s16 + 32768);
+				pwm_duty = (u16 * pwm_period_ns) >> 16;
 			} else {
 				continue;
 			}
 
-			/* Wait until the right time for the next sample */
-			next_sample_time += sample_period_us;
-			int64_t current_time = k_uptime_get() * 1000;  /* us */
-			int64_t wait_time = next_sample_time - current_time;
+			pwm_set(pwm_dev, 0, pwm_period_ns, pwm_duty, 0);
 
-			if (wait_time > 0) {
-				if (wait_time > 1000) {
-					/* Sleep for milliseconds if wait is long enough */
-					k_msleep(wait_time / 1000);
-					/* Busy wait for the remaining microseconds */
-					k_busy_wait(wait_time % 1000);
-				} else {
-					/* Just busy wait for short delays */
-					k_busy_wait(wait_time);
-				}
-			}
-			/* If we're running behind, skip the wait */
+			/* Precise busy-wait for sample timing */
+			k_busy_wait(sample_period_us);
 
 			samples_played++;
+		}
 
-			/* Progress update every 10% */
-			uint32_t progress = (samples_played * 100) / total_samples;
-			if (progress >= last_progress + 10) {
-				LOG_INF("Playback progress: %u%% (%u/%u samples)",
-				        progress, samples_played, total_samples);
-				last_progress = progress;
-			}
+		/* Progress update every 10% */
+		uint32_t progress = (samples_played * 100) / total_samples;
+		if (progress >= last_progress + 10) {
+			LOG_INF("Playback: %u%%", progress);
+			last_progress = progress;
 		}
 	}
 
