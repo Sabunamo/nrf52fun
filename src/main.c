@@ -43,6 +43,41 @@ extern double convert_Gregor_2_Julian_Day(float d, int m, int y);
 // Variables for prayer calculations
 double Lng = 0.0, Lat = 0.0, D = 0.0;
 
+// SD card availability (set once at init, read by athan thread)
+static bool sd_card_available = false;
+
+// Athan playback thread (non-blocking)
+static struct k_event athan_event;
+#define ATHAN_TRIGGER_BIT BIT(0)
+
+static void athan_thread_entry(void *p1, void *p2, void *p3)
+{
+    ARG_UNUSED(p1); ARG_UNUSED(p2); ARG_UNUSED(p3);
+
+    while (1) {
+        k_event_wait(&athan_event, ATHAN_TRIGGER_BIT, true, K_FOREVER);
+
+        printk("Athan thread: Starting playback...\n");
+        if (sd_card_available) {
+            int ret = sd_card_play_wav_file("SD:/athan.wav", 62500);
+            if (ret != 0) {
+                printk("Athan thread: WAV failed (%d), using built-in tones\n", ret);
+                speaker_play_athan();
+            }
+        } else {
+            speaker_play_athan();
+        }
+
+        Pray_Athan();
+        printk("Athan thread: Complete.\n");
+    }
+}
+
+#define ATHAN_THREAD_STACK_SIZE 2048
+K_THREAD_DEFINE(athan_tid, ATHAN_THREAD_STACK_SIZE,
+                athan_thread_entry, NULL, NULL, NULL,
+                K_PRIO_PREEMPT(7), 0, 0);
+
 // Helper function to convert decimal hours to HH:MM format
 void decimal_to_time_string(double decimal_hours, char* time_str, size_t max_len) {
     // Ensure positive value and within 24 hours
@@ -58,6 +93,9 @@ void decimal_to_time_string(double decimal_hours, char* time_str, size_t max_len
 void main(void)
 {
     printk("Starting display text test...\n");
+
+    // Initialize athan event
+    k_event_init(&athan_event);
 
     // Configure relay on P0.26
     const struct device *gpio0_dev = DEVICE_DT_GET(DT_NODELABEL(gpio0));
@@ -287,7 +325,7 @@ void main(void)
     printk("Setup complete. Starting HMI display loop...\n");
 
     bool prayer_times_calculated = false;
-    bool sd_card_available = (sd_ret == 0);  // Track if SD card is working
+    sd_card_available = (sd_ret == 0);  // Track if SD card is working
 
     // Backlight test variables
     uint32_t last_backlight_test = 0;
@@ -567,46 +605,30 @@ void main(void)
                 snprintf(current_time_hhmm, sizeof(current_time_hhmm), "%c%c:%c%c",
                          local_time[0], local_time[1], local_time[3], local_time[4]);
 
-                // Check if current time matches any of the 5 main prayer times (excluding Shuruq at index 1)
+                // Check if current time matches any prayer time
                 for (int i = 0; i < PRAYER_COUNT; i++) {
-                    if (i == 1) continue; // Skip Shuruq (index 1)
-
                     if (strcmp(current_time_hhmm, current_prayers[i].time) == 0) {
                         // Check if we haven't already triggered for this prayer time
                         if (strcmp(last_prayer_triggered, current_prayers[i].time) != 0) {
                             printk("PRAYER TIME REACHED: %s at %s\n", current_prayers[i].name, current_prayers[i].time);
                             strcpy(last_prayer_triggered, current_prayers[i].time);
 
-                            // Relay ON at Maghrib, OFF at Isha
-                            if (i == 4) { // Maghrib
+                            // Relay ON at Fajr, OFF at Shuruq
+                            if (i == 0) { // Fajr
                                 gpio_pin_set(gpio0_dev, RELAY_PIN, 1);
                                 relay_on = true;
-                                printk("Relay ON for Maghrib\n");
-                            } else if (i == 5) { // Isha
+                                printk("Relay ON for Fajr\n");
+                            } else if (i == 1) { // Shuruq
                                 gpio_pin_set(gpio0_dev, RELAY_PIN, 0);
                                 relay_on = false;
-                                printk("Relay OFF at Isha\n");
+                                printk("Relay OFF at Shuruq\n");
                             }
 
-                            // Play Athan from SD card if available
-                            if (sd_card_available) {
-                                printk("Playing Athan from SD card (athan.wav) for %s prayer...\n", current_prayers[i].name);
-                                int audio_ret = sd_card_play_wav_file("SD:/athan.wav", 62500);
-                                if (audio_ret != 0) {
-                                    printk("Failed to play athan.wav from SD card: %d\n", audio_ret);
-                                    printk("Falling back to built-in athan tones...\n");
-                                    speaker_play_athan();
-                                } else {
-                                    printk("Athan playback completed successfully\n");
-                                }
-                            } else {
-                                // Fallback to built-in speaker tones if SD card not available
-                                printk("SD card not available, playing built-in Athan tones...\n");
-                                speaker_play_athan();
+                            // Trigger athan in background thread (skip Shuruq - no athan)
+                            if (i != 1) {
+                                printk("Triggering athan thread for %s prayer...\n", current_prayers[i].name);
+                                k_event_post(&athan_event, ATHAN_TRIGGER_BIT);
                             }
-
-                            // Also trigger LED blinking
-                            Pray_Athan();
 
                         }
                         break;

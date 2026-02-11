@@ -16,6 +16,8 @@ LOG_MODULE_REGISTER(sd_card, LOG_LEVEL_DBG);
 #define PWM_SPEAKER_NODE DT_NODELABEL(pwm0)
 #define BUFFER_SIZE 4096
 
+static uint8_t audio_playback_buffer[BUFFER_SIZE];
+
 /* RGB565 color conversion */
 #define RGB565(r, g, b) ((((r) & 0xF8) << 8) | (((g) & 0xFC) << 3) | (((b) & 0xF8) >> 3))
 #define COLOR_BLACK RGB565(0, 0, 0)
@@ -387,8 +389,7 @@ int sd_card_play_wav_file(const char *filename, uint32_t pwm_freq_hz)
 	LOG_INF("PWM period: %u ns (62.5kHz), Sample rate: %u Hz", pwm_period_ns, sample_rate);
 	LOG_INF("Sample period: %u us", sample_period_us);
 
-	/* Audio playback buffer */
-	uint8_t buffer[BUFFER_SIZE];
+	/* Use static audio playback buffer (avoids stack overflow) */
 	uint32_t total_samples = data_size / bytes_per_sample;
 	uint32_t samples_played = 0;
 	uint32_t last_progress = 0;
@@ -397,7 +398,7 @@ int sd_card_play_wav_file(const char *filename, uint32_t pwm_freq_hz)
 
 	while (samples_played < total_samples) {
 		/* Read a chunk from SD card */
-		res = f_read(&file, buffer, BUFFER_SIZE, &bytes_read);
+		res = f_read(&file, audio_playback_buffer, BUFFER_SIZE, &bytes_read);
 		if (res != FR_OK || bytes_read == 0) {
 			break;
 		}
@@ -408,10 +409,10 @@ int sd_card_play_wav_file(const char *filename, uint32_t pwm_freq_hz)
 
 			if (bits_per_sample == 8) {
 				/* 8-bit unsigned (0-255) -> PWM duty */
-				pwm_duty = ((uint32_t)buffer[i] * pwm_period_ns) >> 8;
+				pwm_duty = ((uint32_t)audio_playback_buffer[i] * pwm_period_ns) >> 8;
 			} else if (bits_per_sample == 16) {
 				/* 16-bit signed -> unsigned -> PWM duty */
-				int16_t s16 = *(int16_t *)&buffer[i];
+				int16_t s16 = *(int16_t *)&audio_playback_buffer[i];
 				uint32_t u16 = (uint32_t)((int32_t)s16 + 32768);
 				pwm_duty = (u16 * pwm_period_ns) >> 16;
 			} else {
