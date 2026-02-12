@@ -1,3 +1,7 @@
+/* Firmware Version */
+#define FW_VERSION "2026.02.12"
+#define FW_NAME   "nrf52fun Prayer Clock"
+
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/display.h>
@@ -46,6 +50,9 @@ double Lng = 0.0, Lat = 0.0, D = 0.0;
 // SD card availability (set once at init, read by athan thread)
 static bool sd_card_available = false;
 
+// Flag to pause main loop heavy work during athan playback
+static volatile bool athan_playing = false;
+
 // Athan playback thread (non-blocking)
 static struct k_event athan_event;
 #define ATHAN_TRIGGER_BIT BIT(0)
@@ -58,6 +65,7 @@ static void athan_thread_entry(void *p1, void *p2, void *p3)
         k_event_wait(&athan_event, ATHAN_TRIGGER_BIT, true, K_FOREVER);
 
         printk("Athan thread: Starting playback...\n");
+        athan_playing = true;
         if (sd_card_available) {
             int ret = sd_card_play_wav_file("SD:/athan.wav", 62500);
             if (ret != 0) {
@@ -67,6 +75,7 @@ static void athan_thread_entry(void *p1, void *p2, void *p3)
         } else {
             speaker_play_athan();
         }
+        athan_playing = false;
 
         Pray_Athan();
         printk("Athan thread: Complete.\n");
@@ -92,7 +101,7 @@ void decimal_to_time_string(double decimal_hours, char* time_str, size_t max_len
 
 void main(void)
 {
-    printk("Starting display text test...\n");
+    printk("=== %s - FW %s ===\n", FW_NAME, FW_VERSION);
 
     // Initialize athan event
     k_event_init(&athan_event);
@@ -347,6 +356,12 @@ void main(void)
 
     // Keep running and update display
     while (1) {
+        // Pause entire main loop while athan is playing to avoid audio glitches
+        if (athan_playing) {
+            k_msleep(100);
+            continue;
+        }
+
         // Process GPS data using polling
         gps_process_data();
 
@@ -613,15 +628,15 @@ void main(void)
                             printk("PRAYER TIME REACHED: %s at %s\n", current_prayers[i].name, current_prayers[i].time);
                             strcpy(last_prayer_triggered, current_prayers[i].time);
 
-                            // Relay ON at Fajr, OFF at Shuruq
-                            if (i == 0) { // Fajr
+                            // Relay ON at Maghrib, OFF at Isha
+                            if (i == 4) { // Maghrib
                                 gpio_pin_set(gpio0_dev, RELAY_PIN, 1);
                                 relay_on = true;
-                                printk("Relay ON for Fajr\n");
-                            } else if (i == 1) { // Shuruq
+                                printk("Relay ON at Maghrib\n");
+                            } else if (i == 5) { // Isha
                                 gpio_pin_set(gpio0_dev, RELAY_PIN, 0);
                                 relay_on = false;
-                                printk("Relay OFF at Shuruq\n");
+                                printk("Relay OFF at Isha\n");
                             }
 
                             // Trigger athan in background thread (skip Shuruq - no athan)
@@ -635,6 +650,7 @@ void main(void)
                     }
                 }
             }
+
 
             // Calculate prayer times when GPS is available and we haven't calculated yet
             if (!prayer_times_calculated && current_gps.date_valid) {
