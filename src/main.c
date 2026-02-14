@@ -1,5 +1,5 @@
 /* Firmware Version */
-#define FW_VERSION "2026.02.12"
+#define FW_VERSION "2026.02.14"
 #define FW_NAME   "nrf52fun Prayer Clock"
 
 #include <zephyr/kernel.h>

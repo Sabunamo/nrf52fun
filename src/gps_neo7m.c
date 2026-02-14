@@ -390,6 +390,10 @@ void gps_print_raw_data(void)
     printk("=======================================\n\n");
 }
 
+// ============================================================================
+// DST (Daylight Saving Time) support
+// ============================================================================
+
 /**
  * @brief Calculate day of week (0=Sunday, 1=Monday, ..., 6=Saturday)
  * Uses Zeller's congruence algorithm
@@ -405,87 +409,197 @@ static int calculate_day_of_week(int day, int month, int year)
     int k = year % 100;
     int j = year / 100;
     int h = (q + (13 * (m + 1)) / 5 + k + k / 4 + j / 4 - 2 * j) % 7;
-    // Convert to 0=Sunday format
-    return (h + 6) % 7;
+    return (h + 6) % 7;  // 0=Sunday
 }
 
 /**
  * @brief Find last Sunday of a given month/year
- * @return Day of month (1-31) of the last Sunday
  */
 static int find_last_sunday(int month, int year)
 {
-    // Days in each month
     int days_in_month[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
-
-    // Check for leap year
     if (month == 2 && ((year % 4 == 0 && year % 100 != 0) || (year % 400 == 0))) {
         days_in_month[1] = 29;
     }
-
     int last_day = days_in_month[month - 1];
-
-    // Find last Sunday by checking backwards from end of month
     for (int day = last_day; day >= 1; day--) {
-        if (calculate_day_of_week(day, month, year) == 0) {  // 0 = Sunday
+        if (calculate_day_of_week(day, month, year) == 0) {
             return day;
         }
     }
-    return last_day;  // Fallback (shouldn't happen)
+    return last_day;
 }
 
 /**
- * @brief Check if date is in DST period (European rules)
- * DST starts: Last Sunday of March at 2:00 AM
- * DST ends: Last Sunday of October at 3:00 AM
- * @return true if in DST period, false otherwise
+ * @brief Find the Nth Sunday of a given month/year (for US DST rules)
+ * @param n Which Sunday (1=first, 2=second, etc.)
  */
-static bool is_dst_active(int day, int month, int year, int hour)
+static int find_nth_sunday(int month, int year, int n)
 {
-    // DST not active from November to February
-    if (month < 3 || month > 10) {
-        return false;
+    int count = 0;
+    int days_in_month[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    if (month == 2 && ((year % 4 == 0 && year % 100 != 0) || (year % 400 == 0))) {
+        days_in_month[1] = 29;
     }
-
-    // Definitely active from April to September
-    if (month > 3 && month < 10) {
-        return true;
-    }
-
-    // March: Check if after last Sunday at 2:00 AM
-    if (month == 3) {
-        int last_sunday = find_last_sunday(3, year);
-        if (day > last_sunday) {
-            return true;
-        } else if (day == last_sunday && hour >= 2) {
-            return true;
+    for (int day = 1; day <= days_in_month[month - 1]; day++) {
+        if (calculate_day_of_week(day, month, year) == 0) {
+            count++;
+            if (count == n) return day;
         }
-        return false;
     }
+    return 1;  // Fallback
+}
 
-    // October: Check if before last Sunday at 3:00 AM
-    if (month == 10) {
-        int last_sunday = find_last_sunday(10, year);
-        if (day < last_sunday) {
-            return true;
-        } else if (day == last_sunday && hour < 3) {
-            return true;
+// DST rule types
+#define DST_NONE 0
+#define DST_EU   1  // Last Sun March 1:00 UTC → Last Sun October 1:00 UTC
+#define DST_US   2  // 2nd Sun March ~7:00 UTC → 1st Sun November ~6:00 UTC
+
+// Use city database value instead of table override
+#define TZ_USE_CITY -99
+
+/**
+ * @brief Country timezone & DST lookup table
+ *
+ * Provides the CORRECT standard timezone for each country (overriding
+ * potentially wrong values in the city database) and the DST rule.
+ * Countries not in this table use the city database timezone as-is (no DST).
+ *
+ * For multi-timezone countries (US, CA), std_tz = TZ_USE_CITY so the
+ * per-city timezone_offset is used instead.
+ */
+typedef struct {
+    char cc[3];       // ISO 3166-1 alpha-2 country code
+    int8_t std_tz;    // Standard timezone (UTC offset), or TZ_USE_CITY
+    uint8_t dst_rule; // DST_NONE, DST_EU, or DST_US
+} country_tz_t;
+
+static const country_tz_t country_tz_table[] = {
+    // === EU DST countries ===
+    // WET zone (UTC+0 standard, UTC+1 summer)
+    {"GB",  0, DST_EU}, {"PT",  0, DST_EU},
+    // CET zone (UTC+1 standard, UTC+2 summer)
+    {"FR",  1, DST_EU}, {"DE",  1, DST_EU}, {"IT",  1, DST_EU},
+    {"ES",  1, DST_EU}, {"NL",  1, DST_EU}, {"BE",  1, DST_EU},
+    {"CH",  1, DST_EU}, {"AT",  1, DST_EU}, {"CZ",  1, DST_EU},
+    {"SK",  1, DST_EU}, {"HU",  1, DST_EU}, {"PL",  1, DST_EU},
+    {"RS",  1, DST_EU}, {"HR",  1, DST_EU}, {"BA",  1, DST_EU},
+    {"SI",  1, DST_EU}, {"MK",  1, DST_EU}, {"ME",  1, DST_EU},
+    {"AL",  1, DST_EU}, {"XK",  1, DST_EU}, {"MT",  1, DST_EU},
+    {"NO",  1, DST_EU}, {"SE",  1, DST_EU}, {"DK",  1, DST_EU},
+    // EET zone (UTC+2 standard, UTC+3 summer)
+    {"FI",  2, DST_EU}, {"RO",  2, DST_EU}, {"BG",  2, DST_EU},
+    {"GR",  2, DST_EU}, {"CY",  2, DST_EU}, {"LT",  2, DST_EU},
+    {"LV",  2, DST_EU}, {"EE",  2, DST_EU}, {"UA",  2, DST_EU},
+    {"MD",  2, DST_EU},
+    // === US/Canada DST (multi-timezone, use city values) ===
+    {"US", TZ_USE_CITY, DST_US}, {"CA", TZ_USE_CITY, DST_US},
+    // === Non-DST timezone corrections (city DB has wrong values) ===
+    {"TR",  3, DST_NONE},  // Turkey: permanent UTC+3 (city DB has +4)
+    {"EG",  2, DST_NONE},  // Egypt: permanent UTC+2 (city DB has +3)
+};
+
+#define COUNTRY_TZ_TABLE_SIZE (sizeof(country_tz_table) / sizeof(country_tz_table[0]))
+
+/**
+ * @brief Look up country in the timezone/DST table
+ * @return Pointer to entry, or NULL if country not found
+ */
+static const country_tz_t* find_country_tz(const char* country)
+{
+    for (int i = 0; i < (int)COUNTRY_TZ_TABLE_SIZE; i++) {
+        if (strcmp(country, country_tz_table[i].cc) == 0) {
+            return &country_tz_table[i];
         }
-        return false;
     }
-
-    return false;
+    return NULL;
 }
 
 /**
- * @brief Get local time with automatic DST adjustment (CET/CEST)
+ * @brief Check if DST is currently active based on rule, date, and UTC hour
+ * @return 1 if DST is active (add +1 hour), 0 otherwise
+ */
+static int is_dst_active(int dst_rule, int day, int month, int year, int utc_hour)
+{
+    if (dst_rule == DST_EU) {
+        // EU: Last Sunday of March at 1:00 UTC → Last Sunday of October at 1:00 UTC
+        if (month < 3 || month > 10) return 0;
+        if (month > 3 && month < 10) return 1;
+        if (month == 3) {
+            int last_sun = find_last_sunday(3, year);
+            if (day > last_sun) return 1;
+            if (day == last_sun && utc_hour >= 1) return 1;
+            return 0;
+        }
+        if (month == 10) {
+            int last_sun = find_last_sunday(10, year);
+            if (day < last_sun) return 1;
+            if (day == last_sun && utc_hour < 1) return 1;
+            return 0;
+        }
+    }
+
+    if (dst_rule == DST_US) {
+        // US: 2nd Sunday of March at 2:00 local → 1st Sunday of November at 2:00 local
+        // Approximate using UTC (covers EST to PST transition times)
+        if (month < 3 || month > 11) return 0;
+        if (month > 3 && month < 11) return 1;
+        if (month == 3) {
+            int second_sun = find_nth_sunday(3, year, 2);
+            if (day > second_sun) return 1;
+            if (day == second_sun && utc_hour >= 7) return 1;
+            return 0;
+        }
+        if (month == 11) {
+            int first_sun = find_nth_sunday(11, year, 1);
+            if (day < first_sun) return 1;
+            if (day == first_sun && utc_hour < 6) return 1;
+            return 0;
+        }
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Get effective timezone for a city, applying DST and corrections
+ * @param city_tz The timezone_offset stored in the city database
+ * @param country The country code of the nearest city
+ * @param day, month, year, utc_hour GPS date/time in UTC
+ * @param out_dst_active Set to 1 if DST is active, 0 otherwise (can be NULL)
+ * @return Effective timezone offset (standard + DST if applicable)
+ */
+static int get_effective_timezone(int city_tz, const char* country,
+                                  int day, int month, int year, int utc_hour,
+                                  int* out_dst_active)
+{
+    if (out_dst_active) *out_dst_active = 0;
+
+    const country_tz_t* entry = find_country_tz(country);
+    if (!entry) {
+        // Country not in table — no DST, use city value as-is
+        return city_tz;
+    }
+
+    // Get standard timezone: from table override or city database
+    int standard_tz = (entry->std_tz == TZ_USE_CITY) ? city_tz : entry->std_tz;
+
+    // Check DST
+    int dst = is_dst_active(entry->dst_rule, day, month, year, utc_hour);
+    if (out_dst_active) *out_dst_active = dst;
+
+    return standard_tz + dst;
+}
+
+/**
+ * @brief Get local time using prayer-configured timezone
  * @param local_time Output buffer for local time (must be at least 11 bytes)
  * @param max_len Size of output buffer
- * @return Timezone offset applied (1 for CET, 2 for CEST, 0 if invalid)
+ * @return Timezone offset applied (from prayer_get_timezone, 0 if invalid)
  */
 int gps_get_local_time(char *local_time, size_t max_len)
 {
-    if (!current_gps.time_str[0] || !current_gps.date_valid || !local_time || max_len < 11) {
+    if (!current_gps.time_str[0] || !local_time || max_len < 11) {
         if (local_time && max_len > 0) {
             snprintf(local_time, max_len, "--:--:--");
         }
@@ -498,14 +612,9 @@ int gps_get_local_time(char *local_time, size_t max_len)
         return 0;
     }
 
-    int day, month, year;
-    if (sscanf(current_gps.date_str, "%d/%d/%d", &day, &month, &year) != 3) {
-        snprintf(local_time, max_len, "--:--:--");
-        return 0;
-    }
-
-    // Determine timezone offset (CET = UTC+1, CEST = UTC+2)
-    int offset = is_dst_active(day, month, year, hours) ? 2 : 1;
+    // Use the same timezone as prayer calculations (set by gps_auto_configure_timezone)
+    // This replaces the old hardcoded CET/CEST logic so display time matches prayer times
+    int offset = prayer_get_timezone();
 
     // Apply offset
     hours += offset;
@@ -548,29 +657,37 @@ void gps_auto_configure_timezone(void)
     if (nearest_city) {
         int city_tz = nearest_city->timezone_offset;
 
-        printk("NEO-7M: Nearest city: %s (%s) has timezone UTC%+d\n",
+        printk("NEO-7M: Nearest city: %s (%s), city DB timezone: UTC%+d\n",
                nearest_city->city_name, nearest_city->country, city_tz);
         printk("NEO-7M: Calculated timezone from longitude: UTC%+d\n", calculated_tz);
 
-        // Compare calculated vs city timezone
-        if (calculated_tz == city_tz) {
-            printk("NEO-7M: Calculated and city timezones MATCH - using UTC%+d\n", calculated_tz);
-            final_tz = calculated_tz;
+        // Apply country-based timezone correction and DST via lookup table
+        // This dynamically overrides wrong city DB values and adds DST
+        int dst_active = 0;
+        if (current_gps.date_valid) {
+            int day, month, year, utc_hour = 0;
+            if (sscanf(current_gps.date_str, "%d/%d/%d", &day, &month, &year) == 3) {
+                sscanf(current_gps.time_str, "%d", &utc_hour);
+                final_tz = get_effective_timezone(city_tz, nearest_city->country,
+                                                  day, month, year, utc_hour,
+                                                  &dst_active);
+            } else {
+                final_tz = city_tz;  // Can't parse date, use city value
+            }
         } else {
-            printk("NEO-7M: Calculated (UTC%+d) and city (UTC%+d) timezones DIFFER\n",
-                   calculated_tz, city_tz);
-            printk("NEO-7M: Using city timezone UTC%+d (political boundary)\n", city_tz);
-            final_tz = city_tz;
+            // No date yet — use city value without DST
+            final_tz = get_effective_timezone(city_tz, nearest_city->country,
+                                              1, 1, 2000, 0, NULL);
         }
+
+        printk("NEO-7M: Effective timezone: UTC%+d (DST: %s)\n",
+               final_tz, dst_active ? "ACTIVE +1h" : "inactive");
     } else {
-        printk("NEO-7M: No nearest city found - using calculated timezone UTC%+d\n", calculated_tz);
+        printk("NEO-7M: No nearest city found - using longitude-based UTC%+d\n", calculated_tz);
     }
 
-    printk("NEO-7M: Longitude: %.4f, Final timezone: UTC%+d\n",
-           current_gps.longitude, final_tz);
+    printk("NEO-7M: Final timezone: UTC%+d\n", final_tz);
 
     // Update prayer time timezone
     prayer_set_timezone(final_tz);
-
-    printk("NEO-7M: Timezone configured to UTC%+d\n", final_tz);
 }
